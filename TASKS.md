@@ -34,30 +34,30 @@ Third-party Flutter Material 3 client for [EasyTier](https://github.com/EasyTier
 - [ ] Launch on physical device
 
 ## Phase 2 - EasyTier integration research
-- [ ] Clone official EasyTier repository
-- [ ] Analyze Android implementation
-- [ ] Analyze Rust FFI/JNI
-- [ ] Identify required native APIs
-- [ ] Determine integration strategy
-- [ ] Document integration architecture
+- [x] Clone official EasyTier repository
+- [x] Analyze Android implementation
+- [x] Analyze Rust FFI/JNI
+- [x] Identify required native APIs
+- [x] Determine integration strategy
+- [x] Document integration architecture
 
 ## Phase 3 - Core EasyTier integration
-- [ ] Integrate EasyTier native core
-- [ ] Start EasyTier node
-- [ ] Stop EasyTier node
-- [ ] Read node status
-- [ ] Read peer information
-- [ ] Handle native errors
-- [ ] Test on physical Android device
+- [x] Integrate EasyTier native core
+- [x] Start EasyTier node
+- [x] Stop EasyTier node
+- [x] Read node status
+- [x] Read peer information
+- [x] Handle native errors
+- [ ] Test on physical Android device  <!-- APK installed & launches; connect flow needs live network test by owner -->
 
 ## Phase 4 - Configuration
-- [ ] Network name
-- [ ] Network secret
-- [ ] Peer configuration
-- [ ] IPv4 / IPv6 configuration
+- [x] Network name
+- [x] Network secret
+- [x] Peer configuration
+- [x] IPv4 / IPv6 configuration (static IP; DHCP default)
 - [ ] Relay / STUN configuration if supported
-- [ ] Save configuration locally
-- [ ] Load configuration on startup
+- [x] Save configuration locally
+- [x] Load configuration on startup
 
 ## Phase 5 - Material 3 UI
 - [ ] Dashboard
