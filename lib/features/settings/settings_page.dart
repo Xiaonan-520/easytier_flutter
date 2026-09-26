@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'about_page.dart';
+
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
@@ -8,11 +10,20 @@ class SettingsPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
-        children: const [
+        children: [
+          const ListTile(
+            leading: Icon(Icons.vpn_lock_outlined),
+            title: Text('VPN permission'),
+            subtitle: Text('Requested on first connect'),
+          ),
+          const Divider(height: 1),
           ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('About'),
-            subtitle: Text('EasyTier Flutter client'),
+            leading: const Icon(Icons.info_outline),
+            title: const Text('About'),
+            subtitle: const Text('Version, upstream, license'),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const AboutPage()),
+            ),
           ),
         ],
       ),

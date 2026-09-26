@@ -50,3 +50,4 @@ app.*.map.json
 # Project-specific: EasyTier upstream analysis clone (kept out of the client repo)
 /easytier-upstream/
 
+android/build/
