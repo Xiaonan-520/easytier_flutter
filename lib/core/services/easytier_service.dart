@@ -58,15 +58,13 @@ class EasyTierService {
           'Timed out waiting for a virtual IP from the network',
         );
       }
-      final routePrefix = config.dhcp
-          ? '10.144.144.0/24' // EasyTier default virtual range for DHCP
-          : _cidrOf(config.virtualIpv4);
+      final routePrefix = _cidrOf(addr) ?? (config.dhcp ? null : _cidrOf(config.virtualIpv4));
 
       await EasyTierBridge.prepareVpn();
       await EasyTierBridge.startVpn(
         instanceName: _instanceName,
         ipv4Addr: addr,
-        routes: [if (routePrefix.isNotEmpty) routePrefix],
+        routes: [?routePrefix],
       );
 
       _lastError = null;
@@ -75,6 +73,12 @@ class EasyTierService {
       _startPolling();
     } on EasyTierError catch (e) {
       _lastError = e.userMessage;
+      _setState(CoreState.error);
+      await _safeStopCore();
+    } on Object catch (e) {
+      // Unexpected failures (e.g. malformed native JSON) must not leave the
+      // state machine stuck in starting.
+      _lastError = 'Unexpected error: $e';
       _setState(CoreState.error);
       await _safeStopCore();
     }
@@ -104,22 +108,29 @@ class EasyTierService {
     while (DateTime.now().isBefore(deadline)) {
       try {
         final s = await EasyTierBridge.collectStatus();
+        _lastStatus = s;
+        _statusCtrl.add(s);
         if (s.running && s.virtualIp.isNotEmpty) return s.virtualIp;
-      } on EasyTierError {
-        // Core still starting; keep polling until the deadline.
+      } on Object {
+        // Core still starting or payload not parseable yet; keep polling.
       }
       await Future<void>.delayed(const Duration(milliseconds: 700));
     }
     return null;
   }
 
-  /// "a.b.c.d/p" -> "a.b.c.0/p"; empty when the input is malformed.
-  String _cidrOf(String cidr) {
+  /// "a.b.c.d/p" -> "a.b.c.0/p"; null when the input is not a CIDR. For /32
+  /// (single-host DHCP assignment) the host route is added via addAddress
+  /// already, so no separate route is needed.
+  String? _cidrOf(String cidr) {
     final parts = cidr.split('/');
-    if (parts.length != 2) return '';
+    if (parts.length != 2) return null;
     final o = parts[0].split('.');
-    if (o.length != 4) return '';
-    return '${o[0]}.${o[1]}.${o[2]}.0/${parts[1]}';
+    if (o.length != 4) return null;
+    final prefix = int.tryParse(parts[1]);
+    if (prefix == null || prefix < 0 || prefix > 32) return null;
+    if (prefix == 32 || prefix == 0) return null;
+    return '${o[0]}.${o[1]}.${o[2]}.0/$prefix';
   }
 
   Future<NodeStatus> refreshStatus() async {

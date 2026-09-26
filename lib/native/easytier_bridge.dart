@@ -74,10 +74,10 @@ class PeerRow {
     return v is String ? v : '';
   }
 
+
   factory PeerRow.fromRoute(Map<String, dynamic> route) {
     final latency = route['path_latency'];
-    final addr =
-        ((route['ipv4_addr'] ?? const {}) as Map<String, dynamic>)['address'] as Map<String, dynamic>?;
+    final addr = EasyTierBridge._map(EasyTierBridge._map(route['ipv4_addr'])?['address']);
     return PeerRow(
       peerId: (route['peer_id'] as num?)?.toInt() ?? 0,
       hostname: (route['hostname'] as String?)?.isNotEmpty == true
@@ -130,25 +130,34 @@ class EasyTierBridge {
 
   static const _channel = MethodChannel('easytier_flutter/core');
 
-  static Future<Map<Object?, Object?>?> _invoke(
+  /// Safe cast: MethodChannel/jsonDecode payloads can surface const
+  /// dynamic-keyed maps that blow up on a plain `as Map<String, dynamic>`.
+  static Map<String, dynamic>? _map(Object? v) =>
+      v is Map ? Map<String, dynamic>.from(v) : null;
+
+  static Future<Object?>? _invokeRaw(
     String method, [
     Map<String, Object?> args = const {},
   ]) async {
     try {
-      return await _channel.invokeMethod<Map<Object?, Object?>>(method, args);
+      return await _channel.invokeMethod(method, args);
     } on PlatformException catch (e) {
-      throw EasyTierError(
-        e.code == 'NATIVE_ERROR'
-            ? EasyTierErrorCode.unknown
-            : EasyTierErrorCode.unknown,
-        e.message ?? e.code,
-      );
+      throw EasyTierError(EasyTierErrorCode.unknown, e.message ?? e.code);
     } on MissingPluginException {
       throw const EasyTierError(
         EasyTierErrorCode.nativeLibraryMissing,
         'Native bridge not available',
       );
     }
+  }
+
+  /// Invoke a method whose native side answers `{code, error}`.
+  static Future<Map<Object?, Object?>?> _invoke(
+    String method, [
+    Map<String, Object?> args = const {},
+  ]) async {
+    final res = await _invokeRaw(method, args);
+    return res is Map ? Map<Object?, Object?>.from(res) : null;
   }
 
   /// Validate a TOML config string via the official parseConfig JNI API.
@@ -180,25 +189,25 @@ class EasyTierBridge {
     }
   }
 
-  static Future<bool> prepareVpn() async =>
-      await _invoke('prepareVpn') as bool? ?? false;
+  static Future<bool> prepareVpn() async => await _invokeRaw('prepareVpn') == true;
 
   static Future<void> startVpn({
     required String instanceName,
     required String ipv4Addr,
     List<String> routes = const [],
   }) async {
-    await _invoke('startVpn', {
+    await _invokeRaw('startVpn', {
       'instanceName': instanceName,
       'ipv4Addr': ipv4Addr,
       'routes': routes,
     });
   }
 
-  static Future<void> stopVpn() => _invoke('stopVpn');
+  static Future<void> stopVpn() async {
+    await _invokeRaw('stopVpn');
+  }
 
-  static Future<bool> isVpnRunning() async =>
-      await _invoke('isVpnRunning') as bool? ?? false;
+  static Future<bool> isVpnRunning() async => await _invokeRaw('isVpnRunning') == true;
 
   /// Collect the running-state JSON (official collectNetworkInfos) and
   /// project it into a [NodeStatus]. Returns [NodeStatus.empty] when no
@@ -214,19 +223,21 @@ class EasyTierBridge {
   /// preserve_proto_field_names, prost u32 fields as JSON numbers) into a
   /// [NodeStatus].
   static NodeStatus parseStatusJson(String json) {
-    final map =
-        (jsonDecode(json) as Map<String, dynamic>)['map'] as Map<String, dynamic>? ?? {};
+    final decoded = jsonDecode(json);
+    final map = _map(_map(decoded)?['map']) ?? {};
     if (map.isEmpty) return NodeStatus.empty;
 
     // Single-instance client: prefer the running entry.
     final entry = map.entries
-            .where((e) => (e.value as Map<String, dynamic>? ?? const {})['running'] == true)
+            .where((e) => _map(e.value)?['running'] == true)
             .firstOrNull ??
         map.entries.first;
-    final info = entry.value as Map<String, dynamic>;
-    final myInfo = info['my_node_info'] as Map<String, dynamic>?;
-    final virtualIpv4 = myInfo?['virtual_ipv4'] as Map<String, dynamic>?;
-    final vaddr = virtualIpv4?['address'] as Map<String, dynamic>?;
+    final info = _map(entry.value) ?? const {};
+    final myInfo = _map(info['my_node_info']);
+    final virtualIpv4 = _map(myInfo?['virtual_ipv4']);
+    final vaddr = _map(virtualIpv4?['address']);
+
+    final vlen = virtualIpv4?['network_length'];
 
     final routes = (info['routes'] as List<dynamic>? ?? [])
         .whereType<Map<String, dynamic>>()
@@ -239,7 +250,9 @@ class EasyTierBridge {
       running: info['running'] as bool? ?? true,
       // NetworkInstanceRunningInfo carries no network name; show instance name.
       networkName: entry.key,
-      virtualIp: PeerRow.ipv4FromU32(vaddr?['addr']),
+      // "ip/prefix" — startVpn/VpnService need the prefix length too.
+      virtualIp:
+          '${PeerRow.ipv4FromU32(vaddr?['addr'])}${vlen is num ? '/${vlen.toInt()}' : ''}',
       hostname: myInfo?['hostname'] as String? ?? '',
       version: myInfo?['version'] as String? ?? '',
       peers: routes,

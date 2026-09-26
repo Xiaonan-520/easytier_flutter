@@ -86,7 +86,7 @@ void main() {
         '"running": true, "error_msg": null}}}',
       );
       expect(status.running, isTrue);
-      expect(status.virtualIp, '10.144.144.5');
+      expect(status.virtualIp, '10.144.144.5/24');
       expect(status.hostname, 'phone');
       expect(status.peers, hasLength(1));
       expect(status.peers.first.peerId, 5);
