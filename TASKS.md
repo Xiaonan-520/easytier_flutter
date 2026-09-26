@@ -1,5 +1,28 @@
 # EasyTier Android Client Tasks
 
+> ## 🚧 HANDOFF UPDATE (2026-09-26, session 2) — Phase 4 blocked on network_secret
+> BUG#1–#4 all fixed (commit 65bb1c6): analyze ✓ / test ✓ (9 passed) / build ✓ / installed on device ✓.
+>
+> **Live test result (before device was unplugged):** Core starts and reaches the public
+> server (peer_id assigned, foreign-network client sees other nodes in `xiaonan-home-ai`),
+> but **no routes → DHCP stays in WaitForPeers → no virtual IP → connect() times out after
+> 30 s** with "Timed out waiting for a virtual IP from the network".
+> Per official `easytier-core/src/gateway/dhcp.rs` (evaluate/has_routes), DHCP only assigns
+> an IP once at least one route exists; observing foreign peers without connecting provides none.
+> Evidence points to **empty network_secret**: the network is secret-protected, our join with
+> an empty secret authenticates but cannot establish peer connections.
+>
+> **Blocker (needs the user):** the network_secret must be typed into the App UI
+> (Network tab → Network secret) — it must never be written to source/docs/git or handled
+> by the agent. After the user enters it, re-run: Connect → expect virtual IP → VPN TUN →
+> Dashboard Connected → Peers listed → ping tests → Disconnect/重启/重连 lifecycle → Test B.
+>
+> **Testing hazards learned:** (1) Gboard defaults to Pinyin — `adb shell input text` gets
+> transliterated to CJK; switch the keyboard to English (tap globe) or clear the field
+> first. (2) Don't blind-tap by coordinates while the user may be using the phone — taps
+> landed in other apps (file manager) twice. (3) `adb shell am start ...` is safer than
+> tapping. (4) VPN permission was already granted (no dialog appeared on Connect).
+
 Third-party Flutter Material 3 client for [EasyTier](https://github.com/EasyTier/EasyTier).
 
 ## Phase 0 - Environment
