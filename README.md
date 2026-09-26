@@ -9,6 +9,28 @@
 
 ---
 
+## 📋 HANDOFF 报告(2026-09-26 会话 3 结束时更新)
+
+### 已完成
+- **BUG#1~#4 全部修复**(commit 65bb1c6 + 949780c):
+  1. 恢复 main 版 EasyTierJNI.kt(12 个 JNI 方法,与 .so 匹配)
+  2. toToml() 改为官方 Config 结构:`[network_identity]` / `[[peer]]` / listeners / `[flags]`(latency_first, bind_device, dev_name)
+  3. prost JSON 解析:Ipv4Addr.addr 为大端 u32 数字;latency 用 Route.path_latency;parseStatusJson 可测试化
+  4. VPN 时序:connect() 先轮询 collectNetworkInfos 等真实虚拟 IP(30s 超时),再 prepareVpn/startVpn;路由由分配到的地址推导(实测网段是 10.126.126.0/24,不是默认 10.144.144.0/24!)
+- 修复过程中新发现并修复:MethodChannel 返回 bool 的类型转换崩溃(prepareVpn/isVpnRunning)、jsonDecode const map 强转崩溃、network_length 缺失导致 startVpn 无前缀。analyze ✓ test(9) ✓ build ✓,均通过。
+- 真机:APK 已安装;**密钥已由用户通过 UI 输入**(存手机 shared_preferences,从未写入任何文件);Connect 后核心成功入网,Dashboard 显示 **Connected,Node IP: 10.126.126.2/24**。
+
+### 未完成 / 下一步(Phase 4 收尾)
+- 设备在最后验证前被拔出,**TUN 接口(ip addr 看 tun0)与网内 ping 未验证**;19:13:09 logcat 里有一条 EasyTierVpnService Binder 报错待复查。
+- 网络名显示 "default"(map key 是实例名?待查 —— 我们的实例名是 easytier_flutter_default,collectStatus 显示的是 entry.key,需确认 native 侧实例命名)。
+- 剩余测试:Peers 页节点/延迟、ping 网内节点、Disconnect 生命周期、force-stop 重启重连、Test B(官方 App 恢复)。
+- 测试注意:Gboard 拼音会吞 adb input text(先切英文);用户可能同时在用手机,勿盲点坐标。
+
+### 安全
+- network_secret 仅存在于手机 shared_preferences;仓库 grep 无密钥(已知片段确认)。
+
+---
+
 ## ⚠️ HANDOFF — 交接给下一个 Agent 的当前状态(2026-09-26)
 
 ### 项目位置
