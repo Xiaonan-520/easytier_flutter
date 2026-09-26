@@ -45,13 +45,28 @@ class EasyTierService {
       // 2. Start the core instance.
       await EasyTierBridge.runNetworkInstance(toml);
 
-      // 3. Establish the VPN TUN and attach it. DHCP configs don't know their
-      //    IP yet, so default to the EasyTier virtual range and let routes
-      //    come from status on the next refresh.
+      // 3. Wait for the core to assign a virtual IP (DHCP needs peer routes
+      //    first), then establish the VPN TUN with that real address. Official
+      //    GUI does the same polling loop before calling VpnService.
+      final assigned = await _waitForVirtualIp(
+        timeout: const Duration(seconds: 30),
+      );
+      final addr = assigned ?? (config.dhcp ? null : config.virtualIpv4);
+      if (addr == null || addr.isEmpty) {
+        throw const EasyTierError(
+          EasyTierErrorCode.startFailed,
+          'Timed out waiting for a virtual IP from the network',
+        );
+      }
+      final routePrefix = config.dhcp
+          ? '10.144.144.0/24' // EasyTier default virtual range for DHCP
+          : _cidrOf(config.virtualIpv4);
+
       await EasyTierBridge.prepareVpn();
       await EasyTierBridge.startVpn(
         instanceName: _instanceName,
-        ipv4Addr: config.dhcp ? '10.144.144.1/24' : config.virtualIpv4,
+        ipv4Addr: addr,
+        routes: [if (routePrefix.isNotEmpty) routePrefix],
       );
 
       _lastError = null;
@@ -80,6 +95,31 @@ class EasyTierService {
       _lastError = e.userMessage;
       _setState(CoreState.error);
     }
+  }
+
+  /// Poll collectNetworkInfos until the core has a virtual IP (DHCP only
+  /// assigns one once peer routes exist). Returns "ip/prefix" or null on timeout.
+  Future<String?> _waitForVirtualIp({Duration timeout = const Duration(seconds: 30)}) async {
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        final s = await EasyTierBridge.collectStatus();
+        if (s.running && s.virtualIp.isNotEmpty) return s.virtualIp;
+      } on EasyTierError {
+        // Core still starting; keep polling until the deadline.
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+    }
+    return null;
+  }
+
+  /// "a.b.c.d/p" -> "a.b.c.0/p"; empty when the input is malformed.
+  String _cidrOf(String cidr) {
+    final parts = cidr.split('/');
+    if (parts.length != 2) return '';
+    final o = parts[0].split('.');
+    if (o.length != 4) return '';
+    return '${o[0]}.${o[1]}.${o[2]}.0/${parts[1]}';
   }
 
   Future<NodeStatus> refreshStatus() async {

@@ -39,31 +39,37 @@ class NetworkConfig {
     );
   }
 
-  /// Render as official EasyTier TOML. `net_id`-style names are quoted;
-  /// empty optional fields are omitted entirely.
+  /// Render as official EasyTier TOML matching the core TomlConfigLoader
+  /// Config struct (easytier-core/src/config/toml.rs): network name/secret
+  /// live under [network_identity], peers are [[peer]] arrays with `uri`.
+  /// Empty optional fields are omitted entirely.
   String toToml(String instanceName) {
     final b = StringBuffer()
       ..writeln('inst_name = "$instanceName"')
-      ..writeln('network = "${_esc(networkName)}"');
-    if (networkSecret.isNotEmpty) {
-      b.writeln('network_secret = "${_esc(networkSecret)}"');
-    }
-    if (peerUrls.isNotEmpty) {
-      final urls = peerUrls.map((u) => '"${_esc(u)}"').join(', ');
-      b.writeln('peers = [$urls]');
-    }
+      ..writeln('listeners = ["tcp://0.0.0.0:11010", "udp://0.0.0.0:11010", "wg://0.0.0.0:11011"]');
     if (!dhcp && virtualIpv4.isNotEmpty) {
       b.writeln('ipv4 = "$virtualIpv4"');
-    }
-    if (dhcp) {
+    } else if (dhcp) {
       b.writeln('dhcp = true');
     }
     if (hostname.isNotEmpty) {
       b.writeln('hostname = "${_esc(hostname)}"');
     }
+    b.writeln('\n[network_identity]');
+    b.writeln('network_name = "${_esc(networkName)}"');
+    if (networkSecret.isNotEmpty) {
+      b.writeln('network_secret = "${_esc(networkSecret)}"');
+    }
+    for (final uri in peerUrls) {
+      b.writeln('\n[[peer]]');
+      b.writeln('uri = "${_esc(uri)}"');
+    }
+    b.writeln('\n[flags]');
     if (latencyFirst) {
       b.writeln('latency_first = true');
     }
+    b.writeln('bind_device = false');
+    b.writeln('dev_name = "easytier0"');
     return b.toString();
   }
 

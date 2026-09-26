@@ -65,14 +65,25 @@ class PeerRow {
   final int cost;
   final String version;
 
+  /// Format a protobuf Ipv4Addr JSON value. prost serializes uint32 fields
+  /// as JSON numbers (big-endian octets packed into one int).
+  static String ipv4FromU32(Object? v) {
+    if (v is int) {
+      return [(v >> 24) & 255, (v >> 16) & 255, (v >> 8) & 255, v & 255].join('.');
+    }
+    return v is String ? v : '';
+  }
+
   factory PeerRow.fromRoute(Map<String, dynamic> route) {
     final latency = route['path_latency'];
+    final addr =
+        ((route['ipv4_addr'] ?? const {}) as Map<String, dynamic>)['address'] as Map<String, dynamic>?;
     return PeerRow(
       peerId: (route['peer_id'] as num?)?.toInt() ?? 0,
       hostname: (route['hostname'] as String?)?.isNotEmpty == true
           ? route['hostname'] as String
           : 'peer-${route['peer_id']}',
-      virtualIp: ((route['ipv4_addr'] ?? const {}) as Map<String, dynamic>)['addr'] as String? ?? '',
+      virtualIp: ipv4FromU32(addr?['addr']),
       latencyMs: latency is num ? latency.toDouble() : null,
       cost: (route['cost'] as num?)?.toInt() ?? 0,
       version: route['version'] as String? ?? '',
@@ -196,16 +207,26 @@ class EasyTierBridge {
     final res = await _invoke('collectNetworkInfos');
     final json = res?['json'] as String?;
     if (json == null || json.isEmpty) return NodeStatus.empty;
+    return parseStatusJson(json);
+  }
 
+  /// Project the NetworkInstanceRunningInfoMap JSON (serde +
+  /// preserve_proto_field_names, prost u32 fields as JSON numbers) into a
+  /// [NodeStatus].
+  static NodeStatus parseStatusJson(String json) {
     final map =
         (jsonDecode(json) as Map<String, dynamic>)['map'] as Map<String, dynamic>? ?? {};
     if (map.isEmpty) return NodeStatus.empty;
 
-    // Single-instance client: project the first running entry.
-    final entry = map.entries.first;
+    // Single-instance client: prefer the running entry.
+    final entry = map.entries
+            .where((e) => (e.value as Map<String, dynamic>? ?? const {})['running'] == true)
+            .firstOrNull ??
+        map.entries.first;
     final info = entry.value as Map<String, dynamic>;
     final myInfo = info['my_node_info'] as Map<String, dynamic>?;
     final virtualIpv4 = myInfo?['virtual_ipv4'] as Map<String, dynamic>?;
+    final vaddr = virtualIpv4?['address'] as Map<String, dynamic>?;
 
     final routes = (info['routes'] as List<dynamic>? ?? [])
         .whereType<Map<String, dynamic>>()
@@ -216,8 +237,9 @@ class EasyTierBridge {
 
     return NodeStatus(
       running: info['running'] as bool? ?? true,
+      // NetworkInstanceRunningInfo carries no network name; show instance name.
       networkName: entry.key,
-      virtualIp: (virtualIpv4?['addr'] as String?) ?? '',
+      virtualIp: PeerRow.ipv4FromU32(vaddr?['addr']),
       hostname: myInfo?['hostname'] as String? ?? '',
       version: myInfo?['version'] as String? ?? '',
       peers: routes,

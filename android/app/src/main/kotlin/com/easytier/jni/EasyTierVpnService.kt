@@ -80,7 +80,11 @@ class EasyTierVpnService : VpnService() {
             .setMtu(DEFAULT_MTU)
             .addAddress(ipParts[0], ipParts[1].toInt())
             .addAddress("fd00::1", 128)
-            .addRoute("10.144.144.0", 24) // EasyTier default virtual network range
+        // Route for the local virtual subnet, derived from the assigned address
+        // (the old hardcoded 10.144.144.0/24 broke any other addressing plan).
+        subnetOf(ipParts[0], ipParts[1].toInt())?.let { (net, prefix) ->
+            builder.addRoute(net, prefix)
+        }
         for (route in routes) {
             val parts = route.split("/")
             if (parts.size == 2) builder.addRoute(parts[0], parts[1].toInt())
@@ -132,6 +136,19 @@ class EasyTierVpnService : VpnService() {
         }
         vpnInterface = null
         isRunning = false
+    }
+
+    /** "a.b.c.d" + prefix -> network base address and prefix, e.g. ("10.144.144.0", 24). */
+    private fun subnetOf(ip: String, prefix: Int): Pair<String, Int>? {
+        val o = ip.split(".").map { it.toIntOrNull() ?: return null }
+        if (o.size != 4 || o.any { it < 0 || it > 255 } || prefix !in 0..32) return null
+        val addr = ((o[0] shl 24) or (o[1] shl 16) or (o[2] shl 8) or o[3])
+        val mask = if (prefix == 0) 0 else -(1 shl (32 - prefix))
+        val net = addr and mask
+        return Pair(
+            "${(net ushr 24) and 255}.${(net ushr 16) and 255}.${(net ushr 8) and 255}.${net and 255}",
+            prefix,
+        )
     }
 
     companion object {
