@@ -106,6 +106,11 @@ Third-party Flutter Material 3 client for [EasyTier](https://github.com/EasyTier
 - [x] Memory/resource checks (RSS ~385MB incl. 33MB native heap, 45 threads, stable across 6+ connect cycles; no leaks observed)
 
 ## Phase 8 - Release
+### fd residue investigation (2026-09-30, debug APK, fd-level)
+- Connect#1/Disconnect#1/Connect#2/Disconnect#2/Connect#3/Disconnect#3 on device.
+- fd counts via run-as: baseline 149 -> connected 168 -> after each disconnect 155/155/155 (stable, no growth).
+- tun interface removed every cycle; zero /dev/tun fds in /proc/<pid>/fd after disconnect; VPN network released; 0 FATAL.
+- Conclusion: the reported "second-disconnect residual fd/tun" does NOT reproduce; the +6 fds vs baseline are EMUI runtime caches (hwlog/ashmem), not VPN-related. No code change made — ownership model (Java PFD owns fd, core uses close_fd_on_drop(false)) verified correct.
 - [ ] Release build
 - [ ] APK installation test
 - [ ] Git cleanup
