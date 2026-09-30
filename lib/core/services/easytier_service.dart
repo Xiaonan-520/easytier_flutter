@@ -1,20 +1,21 @@
 import 'dart:async';
 
 import '../../native/easytier_bridge.dart';
-import '../models/network_config.dart';
-import '../storage/config_store.dart';
+import '../models/network_profile.dart';
+import '../storage/profile_store.dart';
 
 enum CoreState { idle, starting, running, stopping, error }
 
-/// App-level facade over [EasyTierBridge]. Owns the instance name, config
+/// App-level facade over [EasyTierBridge]. Owns the profile store, config
 /// rendering, VPN orchestration and a periodic status refresh. UI listens to
 /// this; it never calls the bridge directly.
 class EasyTierService {
-  EasyTierService({ConfigStore? configStore}) : _configStore = configStore ?? ConfigStore();
+  EasyTierService({ProfileStore? profileStore})
+      : _profileStore = profileStore ?? ProfileStore();
 
-  static const _instanceName = 'easytier_flutter_default';
+  static const _defaultInstanceName = 'easytier_flutter_default';
 
-  final ConfigStore _configStore;
+  final ProfileStore _profileStore;
   final _stateCtrl = StreamController<CoreState>.broadcast();
   final _statusCtrl = StreamController<NodeStatus>.broadcast();
   Timer? _pollTimer;
@@ -27,16 +28,26 @@ class EasyTierService {
   String? get lastError => _lastError;
   Stream<CoreState> get stateStream => _stateCtrl.stream;
   Stream<NodeStatus> get statusStream => _statusCtrl.stream;
+  ProfileStore get profiles => _profileStore;
 
-  Future<NetworkConfig> loadConfig() => _configStore.load();
-  Future<void> saveConfig(NetworkConfig c) => _configStore.save(c);
+  Future<void> loadProfiles() => _profileStore.load();
 
-  Future<void> connect(NetworkConfig config) async {
+  NetworkProfile? get currentProfile => _profileStore.current;
+
+  /// Render the TOML instance name for [profile], falling back to the
+  /// historical default so existing installs keep working.
+  String instanceNameOf(NetworkProfile? profile) {
+    final name = profile?.instanceName;
+    return (name == null || name.isEmpty) ? _defaultInstanceName : name;
+  }
+
+  Future<void> connect(NetworkProfile profile) async {
     if (_state == CoreState.starting || _state == CoreState.running) return;
     _setState(CoreState.starting);
     try {
       // 1. Validate TOML with the official parser before touching the VPN.
-      final toml = config.toToml(_instanceName);
+      final instanceName = instanceNameOf(profile);
+      final toml = profile.toConfig().toToml(instanceName);
       final (ok, parseErr) = await EasyTierBridge.parseConfig(toml);
       if (!ok) {
         throw EasyTierError(EasyTierErrorCode.configurationFailed, parseErr ?? 'parse failed');
@@ -51,18 +62,18 @@ class EasyTierService {
       final assigned = await _waitForVirtualIp(
         timeout: const Duration(seconds: 30),
       );
-      final addr = assigned ?? (config.dhcp ? null : config.virtualIpv4);
+      final addr = assigned ?? (profile.dhcp ? null : profile.virtualIpv4);
       if (addr == null || addr.isEmpty) {
         throw const EasyTierError(
           EasyTierErrorCode.startFailed,
           'Timed out waiting for a virtual IP from the network',
         );
       }
-      final routePrefix = _cidrOf(addr) ?? (config.dhcp ? null : _cidrOf(config.virtualIpv4));
+      final routePrefix = _cidrOf(addr) ?? (profile.dhcp ? null : _cidrOf(profile.virtualIpv4));
 
       await EasyTierBridge.prepareVpn();
       await EasyTierBridge.startVpn(
-        instanceName: _instanceName,
+        instanceName: instanceName,
         ipv4Addr: addr,
         routes: [?routePrefix],
       );
@@ -74,13 +85,13 @@ class EasyTierService {
     } on EasyTierError catch (e) {
       _lastError = e.userMessage;
       _setState(CoreState.error);
-      await _safeStopCore();
+      await _safeStopCore(instanceNameOf(profile));
     } on Object catch (e) {
       // Unexpected failures (e.g. malformed native JSON) must not leave the
       // state machine stuck in starting.
       _lastError = 'Unexpected error: $e';
       _setState(CoreState.error);
-      await _safeStopCore();
+      await _safeStopCore(instanceNameOf(profile));
     }
   }
 
@@ -90,7 +101,7 @@ class EasyTierService {
     _stopPolling();
     try {
       await EasyTierBridge.stopVpn();
-      await _safeStopCore();
+      await _safeStopCore(instanceNameOf(currentProfile));
       _lastError = null;
       _lastStatus = NodeStatus.empty;
       _statusCtrl.add(_lastStatus);
@@ -144,9 +155,9 @@ class EasyTierService {
     }
   }
 
-  Future<void> _safeStopCore() async {
+  Future<void> _safeStopCore(String instanceName) async {
     try {
-      await EasyTierBridge.stopInstance();
+      await EasyTierBridge.stopInstance(name: instanceName);
     } on EasyTierError {
       // Best effort: surface in logs, don't mask the original error.
     }
