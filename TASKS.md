@@ -1,27 +1,24 @@
 # EasyTier Android Client Tasks
 
-> ## 🚧 HANDOFF UPDATE (2026-09-26, session 2) — Phase 4 blocked on network_secret
-> BUG#1–#4 all fixed (commit 65bb1c6): analyze ✓ / test ✓ (9 passed) / build ✓ / installed on device ✓.
+> ## ✅ Phase 4 COMPLETE (2026-09-30, session 4)
+> All live-device tests passed on Mate 20 / Android 10:
 >
-> **Live test result (before device was unplugged):** Core starts and reaches the public
-> server (peer_id assigned, foreign-network client sees other nodes in `xiaonan-home-ai`),
-> but **no routes → DHCP stays in WaitForPeers → no virtual IP → connect() times out after
-> 30 s** with "Timed out waiting for a virtual IP from the network".
-> Per official `easytier-core/src/gateway/dhcp.rs` (evaluate/has_routes), DHCP only assigns
-> an IP once at least one route exists; observing foreign peers without connecting provides none.
-> Evidence points to **empty network_secret**: the network is secret-protected, our join with
-> an empty secret authenticates but cannot establish peer connections.
+> | Item | Result |
+> |---|---|
+> | VPN/tun established | PASS — tun0 10.126.126.2/24, MTU 1300, ConnectivityService VPN CONNECTED, route 10.126.126.0/24 only (no default-route hijack), self excluded via addDisallowedApplication |
+> | In-network traffic | PASS — ping 10.126.126.1 (homeserver) 0% loss, RTT 4-16ms |
+> | Peers page | PASS — 3 nodes with correct IP/latency(7,35,37ms)/cost; u32 big-endian IP parsing verified live |
+> | Dashboard "default" | FIXED — root cause: TOML key `inst_name` is ignored by serde (field is `instance_name`); instance registered as "default" and setTunFd crashed with "instance not found" (the 19:13 Binder crash). Now shows easytier_flutter_default |
+> | Disconnect→Connect ×3 | PASS — each cycle: fresh tun0, ping OK, after disconnect tun/fd/VPN-network/ServiceRecord all = 0, no FATAL |
+> | Official App (Test B) | PASS — both directions: force-stop ours → official connects (tun0, ping OK); force-stop official → ours connects. No residue either way |
 >
-> **Blocker (needs the user):** the network_secret must be typed into the App UI
-> (Network tab → Network secret) — it must never be written to source/docs/git or handled
-> by the agent. After the user enters it, re-run: Connect → expect virtual IP → VPN TUN →
-> Dashboard Connected → Peers listed → ping tests → Disconnect/重启/重连 lifecycle → Test B.
+> **New bugs fixed this session (commits d9a6c3a, d785869, e96d442):**
+> 1. Manifest VpnService lacked `android:permission=BIND_VPN_SERVICE` → establish() always threw SecurityException; the "Connected" seen in session 3 was core-only, no TUN.
+> 2. TOML `inst_name` ignored → instance name "default" → setTunFd "instance not found" FATAL (also the 19:13 crash & "default" dashboard).
+> 3. fd leak: detachFd() orphaned the fd (core uses close_fd_on_drop(false)); fixed by keeping establish() PFD ownership.
+> 4. stopService() alone never fired onDestroy on EMUI 10 → Disconnect leaked TUN/VPN-network/notification; fixed with official-plugin-style sync stopNow() before stopService.
 >
-> **Testing hazards learned:** (1) Gboard defaults to Pinyin — `adb shell input text` gets
-> transliterated to CJK; switch the keyboard to English (tap globe) or clear the field
-> first. (2) Don't blind-tap by coordinates while the user may be using the phone — taps
-> landed in other apps (file manager) twice. (3) `adb shell am start ...` is safer than
-> tapping. (4) VPN permission was already granted (no dialog appeared on Connect).
+> Phase 5 (UI polish), 7 (stability), 8 (GitHub) can start next; no known blockers.
 
 Third-party Flutter Material 3 client for [EasyTier](https://github.com/EasyTier/EasyTier).
 
@@ -71,7 +68,7 @@ Third-party Flutter Material 3 client for [EasyTier](https://github.com/EasyTier
 - [x] Read node status
 - [x] Read peer information
 - [x] Handle native errors
-- [ ] Test on physical Android device  <!-- APK installed & launches; connect flow needs live network test by owner -->
+- [x] Test on physical Android device (2026-09-30: connect, TUN, ping, peers all verified live)
 
 ## Phase 4 - Configuration
 - [x] Network name
