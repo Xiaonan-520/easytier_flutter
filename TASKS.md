@@ -98,12 +98,12 @@ Third-party Flutter Material 3 client for [EasyTier](https://github.com/EasyTier
 - [ ] Physical-device testing
 
 ## Phase 7 - Stability
-- [ ] Error handling
-- [ ] Reconnect behavior
-- [ ] App restart behavior
-- [ ] Configuration persistence
-- [ ] Native resource cleanup
-- [ ] Memory/resource checks
+- [x] Error handling (no-network connect → clear 30s timeout error, state returns to Error, UI recoverable)
+- [x] Reconnect behavior (after Error state, Connect retries successfully in-place; verified after wifi restore)
+- [x] App restart behavior (force-stop → relaunch → config restored from prefs → one-tap reconnect works)
+- [x] Configuration persistence (name/secret/peers survive restarts & process kills; secret stays on-device)
+- [x] Native resource cleanup (3× Disconnect cycles: tun fd, VPN network, ServiceRecord all released = 0)
+- [x] Memory/resource checks (RSS ~385MB incl. 33MB native heap, 45 threads, stable across 6+ connect cycles; no leaks observed)
 
 ## Phase 8 - Release
 - [ ] Release build
