@@ -33,7 +33,7 @@ class AboutPage extends StatelessWidget {
           const ListTile(
             leading: Icon(Icons.api),
             title: Text('EasyTier core'),
-            subtitle: Text('upstream v2.6.4 (8428a89)'),
+            subtitle: Text('upstream main @ ff3921c (post-v2.6.4)'),
           ),
           const ListTile(
             leading: Icon(Icons.link),

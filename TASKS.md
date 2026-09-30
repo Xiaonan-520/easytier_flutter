@@ -80,14 +80,14 @@ Third-party Flutter Material 3 client for [EasyTier](https://github.com/EasyTier
 - [x] Load configuration on startup
 
 ## Phase 5 - Material 3 UI
-- [ ] Dashboard
-- [ ] Connection status
-- [ ] Network information
-- [ ] Peer list
-- [ ] Configuration page
-- [ ] Logs/debug page
-- [ ] Settings page
-- [ ] About page
+- [x] Dashboard (state card + network info + working quick links to Peers/Network tabs)
+- [x] Connection status (idle/starting/running/stopping/error with spinner + error text)
+- [x] Network information (instance name, virtual IP/prefix)
+- [x] Peer list (hostname, virtual IP, latency ms, cost; verified against live network)
+- [x] Configuration page (name/secret/peers/DHCP/hostname/latency-first, persisted)
+- [x] Logs/debug page (state transitions + status snapshots, clear button, newest-first)
+- [x] Settings page (VPN permission hint, About link)
+- [x] About page (version, core version corrected to main @ ff3921c, upstream, disclaimer)
 
 ## Phase 6 - Android integration
 - [ ] VPN service integration if required

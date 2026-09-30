@@ -34,6 +34,8 @@ class _RootScaffoldState extends State<RootScaffold> {
   var _index = 0;
   late final EasyTierService _service;
 
+  void _goToTab(int i) => setState(() => _index = i);
+
   @override
   void initState() {
     super.initState();
@@ -52,7 +54,7 @@ class _RootScaffoldState extends State<RootScaffold> {
       body: IndexedStack(
         index: _index,
         children: [
-          DashboardPage(service: _service),
+          DashboardPage(service: _service, onNavigate: _goToTab),
           PeersPage(service: _service),
           NetworkPage(service: _service),
           LogsPage(service: _service),

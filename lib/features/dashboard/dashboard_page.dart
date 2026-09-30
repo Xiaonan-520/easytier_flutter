@@ -5,9 +5,12 @@ import '../../native/easytier_bridge.dart';
 
 /// Dashboard: connection state card + network summary + quick links.
 class DashboardPage extends StatelessWidget {
-  const DashboardPage({required this.service, super.key});
+  const DashboardPage({required this.service, this.onNavigate, super.key});
 
   final EasyTierService service;
+
+  /// Jump to a bottom-nav tab (index into the root IndexedStack).
+  final ValueChanged<int>? onNavigate;
 
   @override
   Widget build(BuildContext context) {
@@ -40,9 +43,15 @@ class DashboardPage extends StatelessWidget {
                   ListTile(
                     leading: const Icon(Icons.settings_outlined),
                     title: const Text('Network configuration'),
-                    onTap: () => DefaultTabController.maybeOf(context) == null
-                        ? Scaffold.maybeOf(context)?.openDrawer()
-                        : null,
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => onNavigate?.call(2),
+                  ),
+                  const Divider(height: 1),
+                  ListTile(
+                    leading: const Icon(Icons.lan_outlined),
+                    title: const Text('Peer list'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => onNavigate?.call(1),
                   ),
                 ]),
               ),
