@@ -209,6 +209,28 @@ class EasyTierBridge {
 
   static Future<bool> isVpnRunning() async => await _invokeRaw('isVpnRunning') == true;
 
+  /// Push the current app state to the native notification. Fire-and-forget:
+  /// notification rendering must never break the state machine.
+  static Future<void> updateNotification({
+    required String state,
+    required String profileName,
+    required int peers,
+    required String virtualIp,
+    String? error,
+  }) async {
+    try {
+      await _invokeRaw('updateNotification', {
+        'state': state,
+        'profileName': profileName,
+        'peers': peers,
+        'virtualIp': virtualIp,
+        'error': error,
+      });
+    } on Object {
+      // Native side unavailable (tests, engine teardown): ignore.
+    }
+  }
+
   /// Collect the running-state JSON (official collectNetworkInfos) and
   /// project it into a [NodeStatus]. Returns [NodeStatus.empty] when no
   /// instance is running.

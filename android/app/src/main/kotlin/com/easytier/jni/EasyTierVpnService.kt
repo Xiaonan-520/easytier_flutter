@@ -9,7 +9,6 @@ import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Log
-import androidx.core.app.NotificationCompat
 
 /**
  * VPN service adapted from the official EasyTier tauri-plugin-vpnservice
@@ -56,6 +55,14 @@ class EasyTierVpnService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // Notification "Disconnect" action with the engine gone: reuse this
+        // service's own synchronous teardown path (same as stopVpn does).
+        if (intent?.action == ACTION_NOTIFICATION_DISCONNECT) {
+            Log.i(TAG, "disconnect requested from notification")
+            stopNow()
+            return START_NOT_STICKY
+        }
+
         val instanceName = intent?.getStringExtra(INSTANCE_NAME)
         val ipv4Addr = intent?.getStringExtra(IPV4_ADDR) ?: "10.144.144.1/24"
         val routes = intent?.getStringArrayExtra(ROUTES) ?: emptyArray()
@@ -122,22 +129,10 @@ class EasyTierVpnService : VpnService() {
         val channel = NotificationChannel(CHANNEL_ID, "EasyTier VPN", NotificationManager.IMPORTANCE_LOW)
         getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
 
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        }
-        val contentIntent = launchIntent?.let {
-            PendingIntent.getActivity(this, 0, it,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        }
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_error) // placeholder until proper icon
-            .setContentTitle("EasyTier VPN running")
-            .setContentText("Virtual network is active")
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .apply { contentIntent?.let(::setContentIntent) }
-            .build()
+        // Content is owned by NotificationHelper (driven from the Dart state
+        // machine); here we only promote the service to foreground.
+        val notification = io.github.xiaonan520.easytier_flutter.NotificationHelper
+            .buildForeground(this)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
@@ -169,10 +164,14 @@ class EasyTierVpnService : VpnService() {
 
     companion object {
         private const val TAG = "EasyTierVpnService"
-        private const val CHANNEL_ID = "easytier_vpn_channel"
-        private const val NOTIFICATION_ID = 1356
+        // Shared with NotificationHelper, which renders the notification
+        // content for both the service and app-level state updates.
+        const val CHANNEL_ID = "easytier_vpn_channel"
+        const val NOTIFICATION_ID = 1356
         private const val DEFAULT_MTU = 1300
         private const val PACKAGE_SELF = "io.github.xiaonan520.easytier_flutter"
+
+        const val ACTION_NOTIFICATION_DISCONNECT = "io.github.xiaonan520.easytier_flutter.NOTIFICATION_DISCONNECT"
 
         const val INSTANCE_NAME = "instance_name"
         const val IPV4_ADDR = "ipv4_addr"

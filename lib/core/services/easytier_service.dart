@@ -149,6 +149,8 @@ class EasyTierService {
       final s = await EasyTierBridge.collectStatus();
       _lastStatus = s;
       _statusCtrl.add(s);
+      // Peer count / virtual IP change while running -> refresh the shade.
+      if (_state == CoreState.running) _syncNotification();
       return s;
     } on EasyTierError {
       return _lastStatus;
@@ -176,6 +178,21 @@ class EasyTierService {
   void _setState(CoreState s) {
     _state = s;
     _stateCtrl.add(s);
+    _syncNotification();
+  }
+
+  /// Mirror the current state into the Android notification so the shade and
+  /// the Home page always render the same state machine.
+  void _syncNotification() {
+    final profile = currentProfile;
+    final status = _lastStatus;
+    EasyTierBridge.updateNotification(
+      state: _state.name,
+      profileName: profile?.displayName ?? '',
+      peers: status.peers.length,
+      virtualIp: status.virtualIp,
+      error: _lastError,
+    );
   }
 
   Future<void> dispose() async {

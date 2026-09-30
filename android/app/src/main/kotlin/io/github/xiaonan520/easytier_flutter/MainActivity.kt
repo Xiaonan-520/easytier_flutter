@@ -12,6 +12,7 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     private val channelName = "easytier_flutter/core"
     private var pendingVpnResult: MethodChannel.Result? = null
+    private var stateChannel: MethodChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -61,6 +62,17 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                     "isVpnRunning" -> result.success(EasyTierVpnService.isRunning)
+                    "updateNotification" -> {
+                        NotificationHelper.update(
+                            this,
+                            state = call.argument<String>("state") ?: "idle",
+                            profileName = call.argument<String>("profileName") ?: "",
+                            peers = call.argument<Int>("peers") ?: 0,
+                            virtualIp = call.argument<String>("virtualIp") ?: "",
+                            error = call.argument<String?>("error"),
+                        )
+                        result.success(true)
+                    }
                     else -> result.notImplemented()
                 }
             } catch (e: Exception) {
