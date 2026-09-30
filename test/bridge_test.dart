@@ -13,7 +13,10 @@ void main() {
         latencyFirst: true,
       );
       final toml = cfg.toToml('inst1');
-      expect(toml, contains('inst_name = "inst1"'));
+      // The core Config struct field is instance_name; inst_name is silently
+      // ignored by serde and made setTunFd lookups fail ("instance not found").
+      expect(toml, contains('instance_name = "inst1"'));
+      expect(toml, isNot(contains('inst_name = ')));
       expect(toml, contains('[network_identity]'));
       expect(toml, contains('network_name = "my-mesh"'));
       expect(toml, contains('network_secret = "s3cret"'));

@@ -45,7 +45,10 @@ class NetworkConfig {
   /// Empty optional fields are omitted entirely.
   String toToml(String instanceName) {
     final b = StringBuffer()
-      ..writeln('inst_name = "$instanceName"')
+      // NOTE: the core Config struct field is instance_name (no inst_name
+      // alias) — the old key was silently ignored and the instance fell back
+      // to the default name "default", breaking setTunFd lookups.
+      ..writeln('instance_name = "$instanceName"')
       ..writeln('listeners = ["tcp://0.0.0.0:11010", "udp://0.0.0.0:11010", "wg://0.0.0.0:11011"]');
     if (!dhcp && virtualIpv4.isNotEmpty) {
       b.writeln('ipv4 = "$virtualIpv4"');
