@@ -94,12 +94,11 @@ class EasyTierVpnService : VpnService() {
 
         val descriptor = builder.establish()
             ?: throw IllegalStateException("VpnService.Builder.establish() returned null")
-        // EasyTier core now owns the raw fd (setTunFd). We remember a
-        // ParcelFileDescriptor wrapper of the same fd purely so disconnect()
-        // can close it when the VPN stops.
-        val fd = descriptor.detachFd()
-        vpnInterface = ParcelFileDescriptor.adoptFd(fd)
-        return fd
+        // Keep ownership of the PFD. The Rust core opens the fd with
+        // close_fd_on_drop(false), so the Java side must close it on stop —
+        // otherwise tun0 and the system VPN network leak after disconnect.
+        vpnInterface = descriptor
+        return descriptor.fd
     }
 
     private fun startForegroundWithNotification() {
