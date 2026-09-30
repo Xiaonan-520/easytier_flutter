@@ -77,10 +77,23 @@ class _NetworkEditorPageState extends State<NetworkEditorPage> {
           hostname: _hostname.text.trim(),
           latencyFirst: _latencyFirst,
         );
-    if (base == null) {
-      await widget.service.profiles.add(updated);
-    } else {
-      await widget.service.profiles.update(updated);
+    try {
+      if (base == null) {
+        await widget.service.profiles.add(updated);
+      } else {
+        await widget.service.profiles.update(updated);
+      }
+    } on Object catch (e) {
+      // Re-enable Save and surface the failure instead of leaving the button
+      // permanently disabled with no feedback.
+      if (mounted) {
+        setState(() => _busy = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Save failed: $e'),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+      return;
     }
     if (mounted) Navigator.of(context).pop();
   }
