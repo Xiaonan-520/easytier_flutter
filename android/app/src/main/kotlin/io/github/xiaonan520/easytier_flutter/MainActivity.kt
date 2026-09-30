@@ -53,6 +53,10 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                     "stopVpn" -> {
+                        // Sync teardown first (closes TUN fd, removes
+                        // notification), matching the official VpnServicePlugin:
+                        // stopService() alone may never fire onDestroy.
+                        EasyTierVpnService.instance?.stopNow()
                         stopService(Intent(this, EasyTierVpnService::class.java))
                         result.success(true)
                     }

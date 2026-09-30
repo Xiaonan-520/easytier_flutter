@@ -27,15 +27,32 @@ class EasyTierVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        Log.i(TAG, "onDestroy")
         disconnect()
+        stopForeground(STOP_FOREGROUND_REMOVE)
         instance = null
         super.onDestroy()
     }
 
     override fun onRevoke() {
+        Log.i(TAG, "onRevoke")
         disconnect()
+        stopForeground(STOP_FOREGROUND_REMOVE)
         instance = null
         super.onRevoke()
+    }
+
+    /**
+     * Synchronous teardown called from MainActivity before stopService().
+     * stopService() alone was observed (Huawei EMUI 10) never to invoke
+     * onDestroy, leaking the TUN fd and the foreground notification — the
+     * official VpnServicePlugin does the same self?.onRevoke() dance.
+     */
+    fun stopNow() {
+        Log.i(TAG, "stopNow")
+        disconnect()
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
