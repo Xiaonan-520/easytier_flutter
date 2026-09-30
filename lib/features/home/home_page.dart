@@ -350,10 +350,15 @@ class _RecentPeers extends StatelessWidget {
 
 extension _BusyIcon on Icon {
   /// Swap a static icon for a spinner while a transition is in flight.
+  /// Center is required: the parent Column uses CrossAxisAlignment.stretch,
+  /// which would otherwise force the SizedBox to full card width and distort
+  /// the CircularProgressIndicator.
   Widget busy(bool busy) => busy
-      ? SizedBox.square(
-          dimension: 26,
-          child: CircularProgressIndicator(strokeWidth: 2.5, color: color),
+      ? Center(
+          child: SizedBox.square(
+            dimension: 26,
+            child: CircularProgressIndicator(strokeWidth: 2.5, color: color),
+          ),
         )
       : this;
 }
