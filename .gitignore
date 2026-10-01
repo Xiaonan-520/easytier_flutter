@@ -1,3 +1,14 @@
+# Internal AI-session working docs — not part of the published repo.
+# Keep them locally (they hold session evidence) but out of Git.
+/HANDOFF_NEXT_AGENT.md
+/TASKS.md
+/STATE_RESUME.md
+
+# Secrets / signing material (defense in depth; android/ has its own rules)
+.env
+.env.*
+*.pem
+
 # Miscellaneous
 *.class
 *.log
