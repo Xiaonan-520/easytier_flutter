@@ -4,7 +4,7 @@
 
 ## 当前 Git / 环境
 
-- 分支 `main`,HEAD `6b5c213 feat: import official EasyTier TOML configs as new profiles`,**已推送 GitHub**(github.com/Xiaonan-520/easytier_flutter,public)。
+- 分支 `main`,HEAD `1ded71f feat: export network profile as official EasyTier TOML`,**已推送 GitHub**(github.com/Xiaonan-520/easytier_flutter,public)。
 
 ## 导入配置功能(6b5c213,2026-10-01)
 
@@ -35,6 +35,15 @@
 - App 已断开(tun0=0),UI Disconnected,两 profile 完整(xiaonan-home-ai current,静态 IP 10.126.126.2/24;TestNet dhcp)。
 - 安装的是 debug APK(默认 keystore)。
 - ping homeserver 走 VPN 正常;`best 6 ms`。
+
+## 导出 TOML 功能(1ded71f,2026-10-01)
+
+- `ConfigExporter`(lib/core/services/config_exporter.dart):复用 `NetworkConfig.toToml` 渲染(与喂给 core 的字节一致),文件名 = 显示名 slug + .toml;`save()` = SAF `FilePicker.saveFile`,`share()` = share_plus 13(`SharePlus.instance.share(ShareParams(files:[XFile])`)。
+- `ExportConfigPage`:预览全文 + secret 明文红色警示卡 + Save/Share;编辑器 AppBar 仅已有 profile 显示导出按钮(`_buildProfile()` 导出未保存的表单值)。
+- **toToml 语义修复**:静态 IP 时显式写 `dhcp = false`(省略会让 re-import 翻回 DHCP)。
+- 真机验证:预览+警示卡 ✓;SAF 保存写出 /sdcard/Download/xiaonan-home-ai.toml(419B,与预览一致)✓;系统分享面板以 419B 附件分享 ✓。
+- 测试 33/33(新增 5 个 exporter 用例,双向 round-trip)。
+- 新依赖:share_plus ^13.3.0。
 
 ## 下一步(按用户优先级)
 
