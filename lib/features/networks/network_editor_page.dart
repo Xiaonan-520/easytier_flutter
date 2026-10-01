@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/network_profile.dart';
 import '../../core/services/easytier_service.dart';
+import 'export_config_page.dart';
 
 /// Create or edit a network profile. General fields are always visible;
 /// advanced options (DHCP / static IP, hostname, latency-first) are folded
@@ -58,11 +59,12 @@ class _NetworkEditorPageState extends State<NetworkEditorPage> {
     super.dispose();
   }
 
-  Future<void> _save() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _busy = true);
+  /// The profile as currently edited (unsaved form values included).
+  NetworkProfile _buildProfile() {
     final base = widget.existing;
-    final updated = (base ?? NetworkProfile(id: NetworkProfile.newId(), displayName: '', instanceName: ''))
+    return (base ??
+            NetworkProfile(
+                id: NetworkProfile.newId(), displayName: '', instanceName: ''))
         .copyWith(
           displayName: _displayName.text.trim(),
           instanceName: _instanceName.text.trim(),
@@ -77,8 +79,14 @@ class _NetworkEditorPageState extends State<NetworkEditorPage> {
           hostname: _hostname.text.trim(),
           latencyFirst: _latencyFirst,
         );
+  }
+
+  Future<void> _save() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _busy = true);
+    final updated = _buildProfile();
     try {
-      if (base == null) {
+      if (widget.existing == null) {
         await widget.service.profiles.add(updated);
       } else {
         await widget.service.profiles.update(updated);
@@ -105,6 +113,17 @@ class _NetworkEditorPageState extends State<NetworkEditorPage> {
       appBar: AppBar(
         title: Text(_isNew ? 'New Network' : 'Edit Network'),
         actions: [
+          if (!_isNew)
+            IconButton(
+              icon: const Icon(Icons.ios_share),
+              tooltip: 'Export TOML',
+              onPressed: _busy
+                  ? null
+                  : () => Navigator.of(context).push(MaterialPageRoute<void>(
+                        builder: (_) =>
+                            ExportConfigPage(profile: _buildProfile()),
+                      )),
+            ),
           IconButton(
             icon: const Icon(Icons.check),
             tooltip: 'Save',

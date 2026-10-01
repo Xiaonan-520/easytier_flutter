@@ -51,6 +51,8 @@ class NetworkConfig {
       ..writeln('instance_name = "$instanceName"')
       ..writeln('listeners = ["tcp://0.0.0.0:11010", "udp://0.0.0.0:11010", "wg://0.0.0.0:11011"]');
     if (!dhcp && virtualIpv4.isNotEmpty) {
+      // Explicit false: omitting it would mean DHCP on re-import.
+      b.writeln('dhcp = false');
       b.writeln('ipv4 = "$virtualIpv4"');
     } else if (dhcp) {
       b.writeln('dhcp = true');
