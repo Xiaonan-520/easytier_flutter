@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/network_profile.dart';
 import '../../core/services/easytier_service.dart';
+import 'import_config_page.dart';
 import 'network_editor_page.dart';
 
 /// Profile manager: list of user networks, create/edit/delete/select.
@@ -18,6 +19,11 @@ class NetworksPage extends StatelessWidget {
         title: const Text('Networks'),
         actions: [
           IconButton(
+            icon: const Icon(Icons.file_download_outlined),
+            tooltip: 'Import config (.toml)',
+            onPressed: () => _openImport(context),
+          ),
+          IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'Add network',
             onPressed: () => _openEditor(context),
@@ -28,7 +34,12 @@ class NetworksPage extends StatelessWidget {
         stream: service.profiles.changes,
         builder: (context, _) {
           final profiles = service.profiles.profiles;
-          if (profiles.isEmpty) return _EmptyState(onAdd: () => _openEditor(context));
+          if (profiles.isEmpty) {
+            return _EmptyState(
+              onAdd: () => _openEditor(context),
+              onImport: () => _openImport(context),
+            );
+          }
           final currentId = service.profiles.current?.id;
           return ListView(
             padding: const EdgeInsets.all(16),
@@ -50,6 +61,12 @@ class NetworksPage extends StatelessWidget {
         },
       ),
     );
+  }
+
+  Future<void> _openImport(BuildContext context) async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => ImportConfigPage(service: service),
+    ));
   }
 
   Future<void> _openEditor(BuildContext context, [NetworkProfile? existing]) async {
@@ -143,9 +160,10 @@ class _ProfileCard extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onAdd});
+  const _EmptyState({required this.onAdd, required this.onImport});
 
   final VoidCallback onAdd;
+  final VoidCallback onImport;
 
   @override
   Widget build(BuildContext context) {
@@ -165,6 +183,12 @@ class _EmptyState extends StatelessWidget {
             onPressed: onAdd,
             icon: const Icon(Icons.add),
             label: const Text('Add Network'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: onImport,
+            icon: const Icon(Icons.file_download_outlined),
+            label: const Text('Import config (.toml)'),
           ),
         ],
       ),

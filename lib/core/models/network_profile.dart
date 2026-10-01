@@ -91,7 +91,12 @@ class NetworkProfile {
   /// phone-local list of a handful of profiles.
   static String newId() {
     final ms = DateTime.now().millisecondsSinceEpoch;
-    final rnd = (ms ^ identityHashCode(ms)) & 0xfff;
+    // identityHashCode of the same int is constant within a run; mix in a
+    // mutable counter so two imports in the same millisecond differ.
+    final rnd = (_idCounter = (_idCounter + 1) & 0xfff) ^
+        (ms & 0xfff);
     return '${ms.toRadixString(36)}${rnd.toRadixString(36).padLeft(3, '0')}';
   }
+
+  static int _idCounter = 0;
 }
