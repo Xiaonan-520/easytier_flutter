@@ -4,7 +4,15 @@
 
 ## 当前 Git / 环境
 
-- 分支 `main`,HEAD `114fef3 feat: real traffic stats, peer connection type, faster static-IP connect`,**已推送 GitHub**(github.com/Xiaonan-520/easytier_flutter,public)。
+- 分支 `main`,HEAD `6b5c213 feat: import official EasyTier TOML configs as new profiles`,**已推送 GitHub**(github.com/Xiaonan-520/easytier_flutter,public)。
+
+## 导入配置功能(6b5c213,2026-10-01)
+
+- `ConfigImporter`(lib/core/services/config_importer.dart):官方 Config TOML 子集解析,字段映射严格按 easytier-core/src/config/toml.rs 的 Config struct;遗留别名(inst_name/network/顶层 peers)带警告映射,不静默猜测;解析错误报行号。
+- `ImportConfigPage`:SAF 文件选择(.toml/.conf,无需存储权限)+ 粘贴导入;确认对话框明确"当前网络不受影响";保存后进预填编辑器复核。
+- 真机已验证:official.toml 全流程(选文件→解析→确认→SnackBar→编辑器预填→prefs 持久化);broken.toml 显示 `Line 1: unterminated string`;example_config.toml(官方 android-jni 遗留格式)显示两条 Legacy 警告。
+- 测试 28/28(含 16 个 importer 用例)。测试用的 3 个 toml 已从手机 Download 删除;测试导入的 "official" profile 还在手机上(可留可删)。
+- 坑:file_picker 13.x API 是静态 `FilePicker.pickFiles` + `file.readAsBytes()`(无 .platform/withData);EMUI `input text` 无法输入引号/等号,TOML 文本粘贴测试需要用户手动操作。
 - 最近提交:`114fef3` 真实流量统计+peer连接类型+静态IP快速连接 → `c61debb` profile 保存错误提示 → `1c489b1` docs checkpoint → `8d3fde1` UI-6 通知 → `11e10fd` spinner fix → `d5b1b8a` UI redesign → `a0140a6` fd 证据 → `4b83ba5` Phase 7。
 - secret 扫描(`xiaonan@`/`147369`):0 命中。
 - 构建环境(不要 export HOME!gradle debug signing 读 `$HOME/.android/debug.keystore`,必须用默认 `/home/xiaonan/.android` 的):
