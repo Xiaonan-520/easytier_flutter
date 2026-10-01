@@ -8,25 +8,33 @@ import '../features/home/home_page.dart';
 import '../features/networks/networks_page.dart';
 import '../features/peers/peers_page.dart';
 import '../features/settings/settings_page.dart';
-import 'theme.dart';
+import 'theme_controller.dart';
 
 class EasyTierApp extends StatelessWidget {
-  const EasyTierApp({super.key});
+  const EasyTierApp({required this.themeController, super.key});
+
+  final ThemeController themeController;
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'EasyTier',
-      debugShowCheckedModeBanner: false,
-      theme: buildTheme(Brightness.light),
-      darkTheme: buildTheme(Brightness.dark),
-      home: const RootScaffold(),
+    return AnimatedBuilder(
+      animation: themeController,
+      builder: (context, _) => MaterialApp(
+        title: 'EasyTier',
+        debugShowCheckedModeBanner: false,
+        theme: themeController.preset.theme(Brightness.light),
+        darkTheme: themeController.preset.theme(Brightness.dark),
+        themeMode: themeController.mode,
+        home: RootScaffold(themeController: themeController),
+      ),
     );
   }
 }
 
 class RootScaffold extends StatefulWidget {
-  const RootScaffold({super.key});
+  const RootScaffold({required this.themeController, super.key});
+
+  final ThemeController themeController;
 
   @override
   State<RootScaffold> createState() => _RootScaffoldState();
@@ -87,7 +95,7 @@ class _RootScaffoldState extends State<RootScaffold> {
           HomePage(service: _service, onNavigate: (i) => setState(() => _index = i)),
           NetworksPage(service: _service),
           PeersPage(service: _service),
-          SettingsPage(service: _service),
+          SettingsPage(service: _service, themeController: widget.themeController),
         ],
       ),
       bottomNavigationBar: NavigationBar(

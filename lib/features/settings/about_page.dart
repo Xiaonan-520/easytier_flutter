@@ -1,4 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+/// The app's own repository — the real GitHub remote, not guessed.
+const _githubUrl = 'https://github.com/Xiaonan-520/easytier_flutter';
 
 /// About: identity, versions, upstream, license, disclaimer. Kept short.
 class AboutPage extends StatelessWidget {
@@ -24,7 +28,30 @@ class AboutPage extends StatelessWidget {
               )),
             ],
           ),
+          const SizedBox(height: 4),
+          Text(
+            'Third-party EasyTier Mesh VPN client for Android, '
+            'built with Flutter + Material 3.',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
           const SizedBox(height: 24),
+          Card(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            child: ListTile(
+              leading: const Icon(Icons.code),
+              title: const Text('EasyTier Flutter'),
+              subtitle: Text('github.com/Xiaonan-520/easytier_flutter',
+                  style: theme.textTheme.bodySmall),
+              trailing: const Icon(Icons.open_in_new, size: 18),
+              onTap: () => launchUrl(Uri.parse(_githubUrl),
+                  mode: LaunchMode.externalApplication),
+            ),
+          ),
+          const SizedBox(height: 16),
           Card(
             margin: EdgeInsets.zero,
             child: Column(

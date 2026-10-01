@@ -1,4 +1,5 @@
 import 'package:easytier_flutter/app/app.dart';
+import 'package:easytier_flutter/app/theme_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,7 +8,7 @@ void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
 
   Future<void> boot(WidgetTester tester) async {
-    await tester.pumpWidget(const EasyTierApp());
+    await tester.pumpWidget(EasyTierApp(themeController: ThemeController()));
     // Profile load resolves via the mocked shared_preferences; a plain pump
     // (not pumpAndSettle, which would hang on the spinner swap) suffices.
     await tester.pump(const Duration(milliseconds: 50));

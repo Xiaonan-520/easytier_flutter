@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
 
+import '../../app/theme_controller.dart';
 import '../../core/services/easytier_service.dart';
 import 'about_page.dart';
+import 'appearance_page.dart';
 import 'diagnostics_page.dart';
 
 /// Settings: grouped entry points. Developer/advanced info lives under
 /// Diagnostics, not here.
 class SettingsPage extends StatelessWidget {
-  const SettingsPage({required this.service, super.key});
+  const SettingsPage({
+    required this.service,
+    required this.themeController,
+    super.key,
+  });
 
   final EasyTierService service;
+  final ThemeController themeController;
 
   @override
   Widget build(BuildContext context) {
@@ -23,8 +30,10 @@ class SettingsPage extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.dark_mode_outlined),
                 title: const Text('Appearance'),
-                subtitle: const Text('Follows the system theme'),
-                onTap: () => _todoSnack(context, 'Appearance'),
+                subtitle: const Text('Theme color and light / dark mode'),
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => AppearancePage(controller: themeController),
+                )),
               ),
             ],
           ),
