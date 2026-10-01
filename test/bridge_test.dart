@@ -75,16 +75,22 @@ void main() {
   });
 
   group('NodeStatus.collectStatus parsing', () {
-    test('parses collectNetworkInfos JSON shape', () {
+    test('parses collectNetworkInfos JSON shape (peerRoutePairs)', () {
       final status = EasyTierBridge.parseStatusJson(
         '{"map": {"inst1": {'
         '"dev_name": "easytier0", '
         '"my_node_info": {"virtual_ipv4": {"address": {"addr": 177246213}, '
-        '"network_length": 24}, "hostname": "phone", "version": "2.6.4", "peer_id": 1}, '
-        '"routes": ['
-        '{"peer_id": 1, "cost": 0, "hostname": "phone"}, '
-        '{"peer_id": 5, "cost": 1, "hostname": "node-a", "path_latency": 8, '
-        '"ipv4_addr": {"address": {"addr": 177246213}, "network_length": 24}}'
+        '"network_length": 24}, "hostname": "phone", "version": "2.7.0", "peer_id": 1}, '
+        '"peer_route_pairs": ['
+        // self entry (cost 0) — must be skipped
+        '{"route": {"peer_id": 1, "cost": 0, "hostname": "phone"}, "peer": null}, '
+        // direct P2P peer with byte counters
+        '{"route": {"peer_id": 5, "cost": 1, "hostname": "node-a", "path_latency": 8, '
+        '"ipv4_addr": {"address": {"addr": 177246213}, "network_length": 24}}, '
+        '"peer": {"peer_id": 5, "conns": [{"stats": {"rx_bytes": 1000, "tx_bytes": 2000, '
+        '"rx_packets": 10, "tx_packets": 20, "latency_us": 8000}, '
+        '"tunnel": {"tunnel_type": "tcp", "local_addr": {"url": "tcp://1.2.3.4:1"}, '
+        '"remote_addr": {"url": "tcp://5.6.7.8:11010"}}}]}}'
         '], '
         '"running": true, "error_msg": null}}}',
       );
@@ -92,8 +98,47 @@ void main() {
       expect(status.virtualIp, '10.144.144.5/24');
       expect(status.hostname, 'phone');
       expect(status.peers, hasLength(1));
-      expect(status.peers.first.peerId, 5);
-      expect(status.peers.first.virtualIp, '10.144.144.5');
+      final peer = status.peers.first;
+      expect(peer.peerId, 5);
+      expect(peer.virtualIp, '10.144.144.5');
+      expect(peer.connectionType, PeerConnectionType.p2p);
+      expect(peer.rxBytes, 1000);
+      expect(peer.txBytes, 2000);
+      expect(status.rxBytes, 1000);
+      expect(status.txBytes, 2000);
+    });
+
+    test('prost u64 counters as JSON strings do not throw', () {
+      final status = EasyTierBridge.parseStatusJson(
+        '{"map": {"inst1": {'
+        '"my_node_info": {"virtual_ipv4": {"address": {"addr": 177246213}, "network_length": 24}}, '
+        '"peer_route_pairs": ['
+        '{"route": {"peer_id": 9, "cost": 1, "hostname": "big", '
+        '"ipv4_addr": {"address": {"addr": 177246215}, "network_length": 24}}, '
+        '"peer": {"peer_id": 9, "conns": [{"stats": {"rx_bytes": "18446744073709551615", '
+        '"tx_bytes": "42", "rx_packets": "1", "tx_packets": "2", "latency_us": "9000"}, '
+        '"tunnel": {"tunnel_type": "udp"}}]}}'
+        '], "running": true}}}',
+      );
+      expect(status.peers, hasLength(1));
+      // u64 max saturates instead of wrapping; the point is no throw.
+      expect(status.peers.first.rxBytes, 9223372036854775807);
+      expect(status.peers.first.txBytes, 42);
+    });
+
+    test('relay peer: cost > 1 maps to relay type', () {
+      final status = EasyTierBridge.parseStatusJson(
+        '{"map": {"inst1": {'
+        '"my_node_info": {"virtual_ipv4": {"address": {"addr": 177246213}, "network_length": 24}}, '
+        '"peer_route_pairs": ['
+        '{"route": {"peer_id": 7, "cost": 2, "hostname": "far", "path_latency": 30, '
+        '"ipv4_addr": {"address": {"addr": 177246214}, "network_length": 24}}, '
+        '"peer": {"peer_id": 7, "conns": [{"stats": {"rx_bytes": 5, "tx_bytes": 6}, '
+        '"tunnel": {"tunnel_type": "udp", "remote_addr": {"url": "udp://1.1.1.1:1"}}}]}}'
+        '], "running": true}}}',
+      );
+      expect(status.peers.first.connectionType, PeerConnectionType.relay);
+      expect(status.peers.first.relayCount, 1);
     });
 
     test('returns empty status for empty map', () {

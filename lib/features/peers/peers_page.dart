@@ -3,6 +3,13 @@ import 'package:flutter/material.dart';
 import '../../core/services/easytier_service.dart';
 import '../../native/easytier_bridge.dart';
 
+String _fmt(int bytes) {
+  if (bytes < 1024) return '$bytes B';
+  final kb = bytes / 1024;
+  if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
+  return '${(kb / 1024).toStringAsFixed(1)} MB';
+}
+
 /// Full peer list projected from NetworkInstanceRunningInfo routes.
 class PeersPage extends StatelessWidget {
   const PeersPage({required this.service, super.key});
@@ -59,7 +66,14 @@ class PeersPage extends StatelessWidget {
               const SizedBox(height: 16),
               _DetailRow('Virtual IP', peer.virtualIp.isEmpty ? '—' : peer.virtualIp),
               _DetailRow('Latency', peer.latencyMs == null ? '—' : '${peer.latencyMs!.toStringAsFixed(0)} ms'),
-              _DetailRow('Cost', '${peer.cost}'),
+              _DetailRow('Connection', switch (peer.connectionType) {
+                PeerConnectionType.p2p => 'P2P',
+                PeerConnectionType.relay =>
+                  peer.relayCount > 1 ? 'Relay (${peer.relayCount})' : 'Relay',
+                PeerConnectionType.unknown => '—',
+              }),
+              _DetailRow('Traffic',
+                  '${_fmt(peer.rxBytes)} ↓ / ${_fmt(peer.txBytes)} ↑'),
               if (peer.version.isNotEmpty) _DetailRow('Version', peer.version),
               _DetailRow('Peer ID', '${peer.peerId}'),
             ],

@@ -48,6 +48,10 @@ class EasyTierError implements Exception {
 
 /// One row in the peer list, projected from the official
 /// NetworkInstanceRunningInfo JSON (api_manage.proto / api_instance.proto).
+/// How the peer is reached, derived from real core data: direct tunnels with
+/// route cost 1 are P2P; anything else is relayed through other peers.
+enum PeerConnectionType { p2p, relay, unknown }
+
 class PeerRow {
   const PeerRow({
     required this.peerId,
@@ -56,6 +60,10 @@ class PeerRow {
     required this.latencyMs,
     required this.cost,
     required this.version,
+    this.connectionType = PeerConnectionType.unknown,
+    this.relayCount = 0,
+    this.rxBytes = 0,
+    this.txBytes = 0,
   });
 
   final int peerId;
@@ -64,6 +72,17 @@ class PeerRow {
   final double? latencyMs;
   final int cost;
   final String version;
+
+  /// P2P when at least one direct connection exists (route cost 1);
+  /// relay when traffic flows via other peers.
+  final PeerConnectionType connectionType;
+
+  /// Number of distinct tunnel protocols across connections (relay paths).
+  final int relayCount;
+
+  /// Cumulative per-peer counters from the core (ConnStats).
+  final int rxBytes;
+  final int txBytes;
 
   /// Format a protobuf Ipv4Addr JSON value. prost serializes uint32 fields
   /// as JSON numbers (big-endian octets packed into one int).
@@ -101,6 +120,8 @@ class NodeStatus {
     required this.version,
     required this.peers,
     required this.errorMessage,
+    this.rxBytes = 0,
+    this.txBytes = 0,
   });
 
   final bool running;
@@ -110,6 +131,10 @@ class NodeStatus {
   final String version;
   final List<PeerRow> peers;
   final String? errorMessage;
+
+  /// Network-wide cumulative RX/TX (sum over peer connections).
+  final int rxBytes;
+  final int txBytes;
 
   static const empty = NodeStatus(
     running: false,
@@ -217,6 +242,8 @@ class EasyTierBridge {
     required int peers,
     required String virtualIp,
     String? error,
+    double rxRate = 0,
+    double txRate = 0,
   }) async {
     try {
       await _invokeRaw('updateNotification', {
@@ -225,6 +252,8 @@ class EasyTierBridge {
         'peers': peers,
         'virtualIp': virtualIp,
         'error': error,
+        'rxRate': rxRate,
+        'txRate': txRate,
       });
     } on Object {
       // Native side unavailable (tests, engine teardown): ignore.
@@ -261,12 +290,13 @@ class EasyTierBridge {
 
     final vlen = virtualIpv4?['network_length'];
 
-    final routes = (info['routes'] as List<dynamic>? ?? [])
-        .whereType<Map<String, dynamic>>()
-        // Skip our own entry (cost 0 to self).
-        .where((r) => (r['cost'] as num? ?? 0) != 0)
-        .map(PeerRow.fromRoute)
-        .toList();
+    final rows = _parsePeerRoutePairs(info);
+    var rxTotal = 0;
+    var txTotal = 0;
+    for (final row in rows) {
+      rxTotal += row.rxBytes;
+      txTotal += row.txBytes;
+    }
 
     return NodeStatus(
       running: info['running'] as bool? ?? true,
@@ -277,8 +307,80 @@ class EasyTierBridge {
           '${PeerRow.ipv4FromU32(vaddr?['addr'])}${vlen is num ? '/${vlen.toInt()}' : ''}',
       hostname: myInfo?['hostname'] as String? ?? '',
       version: myInfo?['version'] as String? ?? '',
-      peers: routes,
+      peers: rows,
       errorMessage: info['error_msg'] as String?,
+      rxBytes: rxTotal,
+      txBytes: txTotal,
     );
+  }
+
+  /// Project PeerRoutePair[] (route + peer.conns) into PeerRows. Connection
+  /// facts come straight from the core: tunnel_type of each connection,
+  /// per-conn cumulative byte counters, and the route cost (1 = direct).
+  /// prost JSON emits u64 counters as strings ("123"), u32 as numbers —
+  /// accept both everywhere. Values above the signed 64-bit range saturate
+  /// (a real counter never gets there; the wrap would corrupt rates).
+  static int _intOf(Object? v) => switch (v) {
+        final num n => n.toInt(),
+        final String str =>
+          int.tryParse(str) ??
+              (BigInt.parse(str) >= BigInt.parse('9223372036854775807')
+                  ? 9223372036854775807
+                  : 0),
+        _ => 0,
+      };
+
+  static List<PeerRow> _parsePeerRoutePairs(Map<String, dynamic> info) {
+    final pairs = (info['peerRoutePairs'] ?? info['peer_route_pairs'])
+        as List<dynamic>? ?? [];
+    final rows = <PeerRow>[];
+    for (final pairRaw in pairs) {
+      final pair = _map(pairRaw);
+      if (pair == null) continue;
+      final route = _map(pair['route']);
+      if (route == null) continue;
+      // Skip our own entry (cost 0 to self).
+      final cost = (route['cost'] as num?)?.toInt() ?? 0;
+      if (cost == 0) continue;
+
+      final peer = _map(pair['peer']);
+      final conns = (peer?['conns'] as List<dynamic>? ?? [])
+          .map(_map)
+          .whereType<Map<String, dynamic>>()
+          .toList();
+
+      var rx = 0;
+      var tx = 0;
+      final protoSet = <String>{};
+      for (final conn in conns) {
+        final stats = _map(conn['stats']);
+        rx += _intOf(stats?['rxBytes'] ?? stats?['rx_bytes']);
+        tx += _intOf(stats?['txBytes'] ?? stats?['tx_bytes']);
+        final tunnel = _map(conn['tunnel']);
+        final proto = (tunnel?['tunnelType'] ?? tunnel?['tunnel_type']) as String?;
+        if (proto != null && proto.isNotEmpty) protoSet.add(proto);
+      }
+
+      final addr = _map(_map(route['ipv4_addr'])?['address']);
+      final isDirect = cost == 1 && conns.isNotEmpty;
+      rows.add(PeerRow(
+        peerId: _intOf(route['peer_id']),
+        hostname: (route['hostname'] as String?)?.isNotEmpty == true
+            ? route['hostname'] as String
+            : 'peer-${route['peer_id']}',
+        virtualIp: PeerRow.ipv4FromU32(addr?['addr']),
+        latencyMs: route['path_latency'] is num
+            ? (route['path_latency'] as num).toDouble()
+            : null,
+        cost: cost,
+        version: route['version'] as String? ?? '',
+        connectionType:
+            isDirect ? PeerConnectionType.p2p : PeerConnectionType.relay,
+        relayCount: protoSet.length,
+        rxBytes: rx,
+        txBytes: tx,
+      ));
+    }
+    return rows;
   }
 }

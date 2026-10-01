@@ -70,6 +70,8 @@ class MainActivity : FlutterActivity() {
                             peers = call.argument<Int>("peers") ?: 0,
                             virtualIp = call.argument<String>("virtualIp") ?: "",
                             error = call.argument<String?>("error"),
+                            rxRate = call.argument<Double>("rxRate") ?: 0.0,
+                            txRate = call.argument<Double>("txRate") ?: 0.0,
                         )
                         result.success(true)
                     }

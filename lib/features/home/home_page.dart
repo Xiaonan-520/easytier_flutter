@@ -38,7 +38,11 @@ class HomePage extends StatelessWidget {
               const SizedBox(height: 16),
               Text('Traffic', style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
-              const _TrafficCard(),
+              StreamBuilder<TrafficStats>(
+                stream: service.trafficStream,
+                initialData: service.traffic,
+                builder: (context, t) => _TrafficCard(stats: t.data ?? TrafficStats.zero),
+              ),
               const SizedBox(height: 16),
               Text('Network', style: theme.textTheme.titleMedium),
               const SizedBox(height: 8),
@@ -181,11 +185,13 @@ class _ConnectionCard extends StatelessWidget {
   }
 }
 
-/// Traffic card. The core does not expose per-flow traffic counters yet, so
-/// there is nothing real to show — deliberately left as a placeholder rather
-/// than fabricating numbers.
+/// Traffic card: real rates sampled from the core's cumulative counters
+/// (delta / elapsed on each poll tick) plus the totals. Zero shows an em
+/// dash — never a fabricated number.
 class _TrafficCard extends StatelessWidget {
-  const _TrafficCard();
+  const _TrafficCard({required this.stats});
+
+  final TrafficStats stats;
 
   @override
   Widget build(BuildContext context) {
@@ -198,7 +204,8 @@ class _TrafficCard extends StatelessWidget {
               child: _TrafficSlot(
                 icon: Icons.south,
                 label: 'Download',
-                value: '—',
+                value: _fmtRate(stats.rxRate),
+                total: 'Total ${_fmtBytes(stats.rxBytes)}',
               ),
             ),
             const SizedBox(width: 24),
@@ -206,7 +213,8 @@ class _TrafficCard extends StatelessWidget {
               child: _TrafficSlot(
                 icon: Icons.north,
                 label: 'Upload',
-                value: '—',
+                value: _fmtRate(stats.txRate),
+                total: 'Total ${_fmtBytes(stats.txBytes)}',
               ),
             ),
           ],
@@ -214,14 +222,36 @@ class _TrafficCard extends StatelessWidget {
       ),
     );
   }
+
+  static String _fmtRate(double bps) {
+    if (bps < 1) return '—';
+    final kb = bps / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(1)} KB/s';
+    return '${(kb / 1024).toStringAsFixed(1)} MB/s';
+  }
+
+  static String _fmtBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    final kb = bytes / 1024;
+    if (kb < 1024) return '${kb.toStringAsFixed(1)} KB';
+    final mb = kb / 1024;
+    if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
+    return '${(mb / 1024).toStringAsFixed(2)} GB';
+  }
 }
 
 class _TrafficSlot extends StatelessWidget {
-  const _TrafficSlot({required this.icon, required this.label, required this.value});
+  const _TrafficSlot({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.total,
+  });
 
   final IconData icon;
   final String label;
   final String value;
+  final String total;
 
   @override
   Widget build(BuildContext context) {
@@ -238,6 +268,10 @@ class _TrafficSlot extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(value, style: theme.textTheme.titleLarge),
+        const SizedBox(height: 2),
+        Text(total, style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        )),
       ],
     );
   }

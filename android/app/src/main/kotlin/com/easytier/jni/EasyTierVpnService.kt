@@ -20,12 +20,21 @@ class EasyTierVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
 
+    private fun dbg(msg: String) {
+        try {
+            java.io.File(getExternalFilesDir(null), "vpn_dbg.log")
+                .appendText("${System.currentTimeMillis()} $msg\n")
+        } catch (_: Throwable) {}
+    }
+
     override fun onCreate() {
         super.onCreate()
+        dbg("onCreate")
         instance = this
     }
 
     override fun onDestroy() {
+        dbg("onDestroy")
         Log.i(TAG, "onDestroy")
         disconnect()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -34,6 +43,7 @@ class EasyTierVpnService : VpnService() {
     }
 
     override fun onRevoke() {
+        dbg("onRevoke")
         Log.i(TAG, "onRevoke")
         disconnect()
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -55,6 +65,7 @@ class EasyTierVpnService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        dbg("onStartCommand action=${intent?.action} instance=${intent?.getStringExtra(INSTANCE_NAME)} ip=${intent?.getStringExtra(IPV4_ADDR)}")
         // Notification "Disconnect" action with the engine gone: reuse this
         // service's own synchronous teardown path (same as stopVpn does).
         if (intent?.action == ACTION_NOTIFICATION_DISCONNECT) {
@@ -68,6 +79,7 @@ class EasyTierVpnService : VpnService() {
         val routes = intent?.getStringArrayExtra(ROUTES) ?: emptyArray()
 
         if (instanceName == null) {
+            dbg("missing instance_name")
             Log.e(TAG, "missing instance_name, stopping")
             stopSelf()
             return START_NOT_STICKY
@@ -91,6 +103,7 @@ class EasyTierVpnService : VpnService() {
             return START_NOT_STICKY
         }
         isRunning = true
+        dbg("tun fd $fd attached to $instanceName")
         Log.i(TAG, "tun fd $fd attached to instance $instanceName")
         return START_STICKY
     }

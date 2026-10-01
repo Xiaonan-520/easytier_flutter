@@ -6,6 +6,28 @@ import '../storage/profile_store.dart';
 
 enum CoreState { idle, starting, running, stopping, error }
 
+/// Real traffic rates computed from cumulative core counters by sampling
+/// [NodeStatus.rxBytes]/[txBytes] on each poll tick. No synthetic values.
+class TrafficStats {
+  const TrafficStats({
+    required this.rxRate,
+    required this.txRate,
+    required this.rxBytes,
+    required this.txBytes,
+    required this.timestamp,
+  });
+
+  final double rxRate;
+  final double txRate;
+  final int rxBytes;
+  final int txBytes;
+  final DateTime? timestamp;
+
+  static final TrafficStats zero = TrafficStats(
+    rxRate: 0, txRate: 0, rxBytes: 0, txBytes: 0, timestamp: null,
+  );
+}
+
 /// App-level facade over [EasyTierBridge]. Owns the profile store, config
 /// rendering, VPN orchestration and a periodic status refresh. UI listens to
 /// this; it never calls the bridge directly.
@@ -18,10 +40,19 @@ class EasyTierService {
   final ProfileStore _profileStore;
   final _stateCtrl = StreamController<CoreState>.broadcast();
   final _statusCtrl = StreamController<NodeStatus>.broadcast();
+  final _trafficCtrl = StreamController<TrafficStats>.broadcast();
   Timer? _pollTimer;
   CoreState _state = CoreState.idle;
   NodeStatus _lastStatus = NodeStatus.empty;
   String? _lastError;
+  int? _prevRx;
+  int? _prevTx;
+  DateTime? _prevAt;
+
+  /// Latest sampled traffic rates (bytes/s) and cumulative totals.
+  TrafficStats _traffic = TrafficStats.zero;
+  TrafficStats get traffic => _traffic;
+  Stream<TrafficStats> get trafficStream => _trafficCtrl.stream;
 
   CoreState get state => _state;
   NodeStatus get status => _lastStatus;
@@ -56,13 +87,13 @@ class EasyTierService {
       // 2. Start the core instance.
       await EasyTierBridge.runNetworkInstance(toml);
 
-      // 3. Wait for the core to assign a virtual IP (DHCP needs peer routes
-      //    first), then establish the VPN TUN with that real address. Official
-      //    GUI does the same polling loop before calling VpnService.
-      final assigned = await _waitForVirtualIp(
-        timeout: const Duration(seconds: 30),
-      );
-      final addr = assigned ?? (profile.dhcp ? null : profile.virtualIpv4);
+      // 3. Establish the VPN TUN with a real address. Static profiles have
+      //    it up front; DHCP profiles wait for the core to assign one (needs
+      //    peer routes first). Symmetric-NAT phones can take >60s for OSPF
+      //    convergence (observed 55-60s on EMUI); 90s covers the slow path.
+      final addr = profile.dhcp
+          ? await _waitForVirtualIp(timeout: const Duration(seconds: 90))
+          : _withPrefix(profile.virtualIpv4);
       if (addr == null || addr.isEmpty) {
         throw const EasyTierError(
           EasyTierErrorCode.startFailed,
@@ -85,12 +116,16 @@ class EasyTierService {
     } on EasyTierError catch (e) {
       _lastError = e.userMessage;
       _setState(CoreState.error);
+      // The TUN may already be up (timeout hit after startVpn in a previous
+      // attempt, or the OS kept it); tear it down with the core.
+      await EasyTierBridge.stopVpn();
       await _safeStopCore(instanceNameOf(profile));
     } on Object catch (e) {
       // Unexpected failures (e.g. malformed native JSON) must not leave the
       // state machine stuck in starting.
       _lastError = 'Unexpected error: $e';
       _setState(CoreState.error);
+      await EasyTierBridge.stopVpn();
       await _safeStopCore(instanceNameOf(profile));
     }
   }
@@ -105,6 +140,11 @@ class EasyTierService {
       _lastError = null;
       _lastStatus = NodeStatus.empty;
       _statusCtrl.add(_lastStatus);
+      _prevRx = null;
+      _prevTx = null;
+      _prevAt = null;
+      _traffic = TrafficStats.zero;
+      _trafficCtrl.add(_traffic);
       _setState(CoreState.idle);
     } on EasyTierError catch (e) {
       _lastError = e.userMessage;
@@ -130,6 +170,11 @@ class EasyTierService {
     return null;
   }
 
+  /// Users (and stored legacy data) may give a bare IP; VpnService needs the
+  /// prefix length. Default to /24, matching the standard EasyTier subnet.
+  String _withPrefix(String ip) =>
+      ip.contains('/') ? ip : '$ip/24';
+
   /// "a.b.c.d/p" -> "a.b.c.0/p"; null when the input is not a CIDR. For /32
   /// (single-host DHCP assignment) the host route is added via addAddress
   /// already, so no separate route is needed.
@@ -149,11 +194,54 @@ class EasyTierService {
       final s = await EasyTierBridge.collectStatus();
       _lastStatus = s;
       _statusCtrl.add(s);
+      _sampleTraffic(s);
       // Peer count / virtual IP change while running -> refresh the shade.
       if (_state == CoreState.running) _syncNotification();
       return s;
     } on EasyTierError {
       return _lastStatus;
+    }
+  }
+
+  /// Differential sampling: the core only exposes cumulative bytes, so the
+  /// rate is (current - previous) / elapsed. Counters can reset on reconnect
+  /// (current < previous) — treat that as 0 for one sample.
+  void _sampleTraffic(NodeStatus s) {
+    final now = DateTime.now();
+    final rx = s.rxBytes;
+    final tx = s.txBytes;
+    final prevAt = _prevAt;
+    if (prevAt == null || _prevRx == null || _prevTx == null) {
+      _prevRx = rx;
+      _prevTx = tx;
+      _prevAt = now;
+      return;
+    }
+    final elapsed = now.difference(prevAt).inMilliseconds / 1000.0;
+    if (elapsed <= 0) return;
+    final rxRate = rx >= _prevRx! ? (rx - _prevRx!) / elapsed : 0.0;
+    final txRate = tx >= _prevTx! ? (tx - _prevTx!) / elapsed : 0.0;
+    _prevRx = rx;
+    _prevTx = tx;
+    _prevAt = now;
+    _traffic = TrafficStats(
+      rxRate: rxRate,
+      txRate: txRate,
+      rxBytes: rx,
+      txBytes: tx,
+      timestamp: now,
+    );
+    _trafficCtrl.add(_traffic);
+    if (_state == CoreState.running) {
+      EasyTierBridge.updateNotification(
+        state: _state.name,
+        profileName: currentProfile?.displayName ?? '',
+        peers: s.peers.length,
+        virtualIp: s.virtualIp,
+        error: _lastError,
+        rxRate: rxRate,
+        txRate: txRate,
+      );
     }
   }
 
@@ -192,6 +280,8 @@ class EasyTierService {
       peers: status.peers.length,
       virtualIp: status.virtualIp,
       error: _lastError,
+      rxRate: _traffic.rxRate,
+      txRate: _traffic.txRate,
     );
   }
 
@@ -199,5 +289,6 @@ class EasyTierService {
     _stopPolling();
     await _stateCtrl.close();
     await _statusCtrl.close();
+    await _trafficCtrl.close();
   }
 }

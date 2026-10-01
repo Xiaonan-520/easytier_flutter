@@ -22,14 +22,30 @@ import com.easytier.jni.EasyTierVpnService
 object NotificationHelper {
     private const val TITLE = "EasyTier"
 
+    /** Idempotent: called before every post so the channel exists even when
+     *  the VPN service has never run (fresh install, notification posted
+     *  directly from app state). */
+    private fun ensureChannel(context: Context) {
+        val channel = android.app.NotificationChannel(
+            EasyTierVpnService.CHANNEL_ID,
+            "EasyTier VPN",
+            android.app.NotificationManager.IMPORTANCE_LOW,
+        )
+        context.getSystemService(NotificationManager::class.java)
+            .createNotificationChannel(channel)
+    }
+
     /**
      * Initial notification for startForeground(). State updates arrive from
      * Flutter via [update]; this just renders a neutral "starting" placeholder
      * so the service is promoted without delay.
      */
-    fun buildForeground(context: Context) = baseBuilder(context, "EasyTier · Starting…", null)
-        .setOngoing(true)
-        .build()
+    fun buildForeground(context: Context): android.app.Notification {
+        ensureChannel(context)
+        return baseBuilder(context, "EasyTier · Starting…", null)
+            .setOngoing(true)
+            .build()
+    }
 
     private fun baseBuilder(
         context: Context,
@@ -54,13 +70,15 @@ object NotificationHelper {
         peers: Int,
         virtualIp: String,
         error: String?,
+        rxRate: Double = 0.0,
+        txRate: Double = 0.0,
     ) {
         val networkLabel = profileName.ifEmpty { "EasyTier" }
         val (text, bigText) = when (state) {
             "starting" -> "$networkLabel · Connecting…" to null
             "stopping" -> "$networkLabel · Disconnecting…" to null
             "running" -> {
-                val traffic = "↓  —        ↑  —"
+                val traffic = "↓ ${formatRate(rxRate)}   ↑ ${formatRate(txRate)}"
                 val summary = buildString {
                     append(peers)
                     append(if (peers == 1) " peer" else " peers")
@@ -75,6 +93,7 @@ object NotificationHelper {
             else -> "$networkLabel · Disconnected" to null
         }
 
+        ensureChannel(context)
         val running = state == "running" || state == "starting" || state == "stopping"
         val builder = baseBuilder(context, text, bigText).setOngoing(running)
 
@@ -85,6 +104,16 @@ object NotificationHelper {
 
         context.getSystemService(NotificationManager::class.java)
             .notify(EasyTierVpnService.NOTIFICATION_ID, builder.build())
+    }
+
+    /** Bytes/s -> human string; 0 shows an em dash (no fake numbers). */
+    private fun formatRate(bytesPerSecond: Double): String {
+        if (bytesPerSecond < 1) return "—"
+        val kb = bytesPerSecond / 1024.0
+        return when {
+            kb < 1024 -> String.format("%.1f KB/s", kb)
+            else -> String.format("%.1f MB/s", kb / 1024.0)
+        }
     }
 
     fun cancel(context: Context) {
