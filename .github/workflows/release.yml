@@ -94,21 +94,17 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           pattern: jni-*
-          merge-multiple: true
-          path: android/app/src/main/jniLibs
+          path: jni-staging
 
       - name: Place & verify native libraries
         run: |
-          # Artifacts keep the upstream target path; flatten into jniLibs/<abi>/
           root=android/app/src/main/jniLibs
-          declare -A M=( [aarch64-linux-android]=arm64-v8a [armv7-linux-androideabi]=armeabi-v7a [x86_64-linux-android]=x86_64 )
-          for t in "${!M[@]}"; do
-            src=$(find $root/easytier-upstream -path "*/$t/release/libeasytier_android_jni.so" | head -1)
-            test -n "$src" || { echo "missing $t"; exit 1; }
-            mkdir -p $root/${M[$t]}
-            cp "$src" $root/${M[$t]}/
+          for abi in arm64-v8a armeabi-v7a x86_64; do
+            src=jni-staging/jni-$abi/libeasytier_android_jni.so
+            test -f "$src" || { echo "missing $abi"; exit 1; }
+            mkdir -p $root/$abi
+            cp "$src" $root/$abi/
           done
-          rm -rf $root/easytier-upstream
           find $root -name "*.so" | sort
 
       - name: Build split APKs
