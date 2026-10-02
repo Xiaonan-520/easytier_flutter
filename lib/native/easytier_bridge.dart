@@ -234,6 +234,24 @@ class EasyTierBridge {
 
   static Future<bool> isVpnRunning() async => await _invokeRaw('isVpnRunning') == true;
 
+  /// Persist the tile bootstrap snapshot (rendered TOML + VPN parameters)
+  /// so the QS tile can start the VPN with no Flutter engine running.
+  static Future<void> tileSnapshotSave(Map<String, Object?> snapshot) async {
+    await _invokeRaw('tileSnapshotSave', {'snapshot': jsonEncode(snapshot)});
+  }
+
+  /// Drop the tile bootstrap snapshot (last profile removed / sign-out).
+  static Future<void> tileSnapshotClear() async {
+    await _invokeRaw('tileSnapshotClear');
+  }
+
+  /// Tile-facing runtime phase; lets the app adopt a tile-initiated start.
+  static Future<String> tileRuntimeState() async {
+    final res = await _invokeRaw('tileRuntimeState');
+    final phase = res is Map ? res['phase'] as String? : null;
+    return phase ?? 'idle';
+  }
+
   /// Push the current app state to the native notification. Fire-and-forget:
   /// notification rendering must never break the state machine.
   static Future<void> updateNotification({

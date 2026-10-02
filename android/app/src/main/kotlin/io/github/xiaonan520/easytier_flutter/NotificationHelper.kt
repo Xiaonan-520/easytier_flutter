@@ -47,6 +47,25 @@ object NotificationHelper {
             .build()
     }
 
+    /**
+     * Native "connected" refresh for tile-started sessions: no Flutter
+     * engine is running to push [update] calls, so without this the shade
+     * would sit at "Starting…" until the app is opened. Traffic numbers stay
+     * unknown until the app opens (which then overwrites this) — never fake
+     * them. The Disconnect action routes into the service, which works
+     * engine-less.
+     */
+    fun postRunning(context: Context, instanceName: String, virtualIp: String) {
+        val summary = virtualIp.substringBefore('/').ifEmpty { null }
+        val builder = baseBuilder(context, "$instanceName · Connected", summary)
+            .setOngoing(true)
+            .addAction(0, "Open App", openAppPendingIntent(context))
+            .addAction(0, "Disconnect", disconnectPendingIntent(context))
+        ensureChannel(context)
+        context.getSystemService(NotificationManager::class.java)
+            .notify(EasyTierVpnService.NOTIFICATION_ID, builder.build())
+    }
+
     private fun baseBuilder(
         context: Context,
         text: String,

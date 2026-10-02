@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tile_label">EasyTier VPN</string>
+    <string name="tile_subtitle_connected">Connected</string>
+    <string name="tile_subtitle_connecting">Connecting…</string>
+    <string name="tile_subtitle_disconnecting">Disconnecting…</string>
+    <string name="tile_subtitle_error">Error — tap to open app</string>
+    <string name="tile_subtitle_open_app">Tap to configure</string>
+</resources>

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Mesh-network tile icon, converted 1:1 from the provided 24x24 SVG.
+     Foreground graphic only — SystemUI owns the tile container and tints
+     the drawable per tile state (SrcIn tint keeps relative alphas, so the
+     0.1-alpha outer ring stays faint under both tints). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Faint outer ring: circle r=10, stroke 0.5, opacity 0.1 -->
+    <path
+        android:pathData="M2,12 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0 Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="0.5"
+        android:strokeAlpha="0.1"
+        android:fillColor="#00000000" />
+
+    <!-- Spokes from center (12,12), stroke widths preserved -->
+    <path
+        android:pathData="M12,12 L8,6"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="0.8"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M12,12 L16,18"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M12,12 L6,16"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.4"
+        android:strokeLineCap="round" />
+    <path
+        android:pathData="M12,12 L18,8"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="0.9"
+        android:strokeLineCap="round" />
+
+    <!-- Satellite nodes -->
+    <path
+        android:pathData="M6.7,6 a1.3,1.3 0 1,0 2.6,0 a1.3,1.3 0 1,0 -2.6,0 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M13.8,18 a2.2,2.2 0 1,0 4.4,0 a2.2,2.2 0 1,0 -4.4,0 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M4.2,16 a1.8,1.8 0 1,0 3.6,0 a1.8,1.8 0 1,0 -3.6,0 Z"
+        android:fillColor="#FFFFFFFF" />
+    <path
+        android:pathData="M16.5,8 a1.5,1.5 0 1,0 3,0 a1.5,1.5 0 1,0 -3,0 Z"
+        android:fillColor="#FFFFFFFF" />
+
+    <!-- Center node -->
+    <path
+        android:pathData="M9,12 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0 Z"
+        android:fillColor="#FFFFFFFF" />
+</vector>

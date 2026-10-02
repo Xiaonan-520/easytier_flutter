@@ -33,7 +33,12 @@ class TrafficStats {
 /// this; it never calls the bridge directly.
 class EasyTierService {
   EasyTierService({ProfileStore? profileStore})
-      : _profileStore = profileStore ?? ProfileStore();
+      : _profileStore = profileStore ?? ProfileStore() {
+    // Keep the tile snapshot in step with profile CRUD; every mutation
+    // re-persists through [_persist] so the tile always boots the latest
+    // current profile. Errors are swallowed inside [_syncTileSnapshot].
+    _profileStore.changes.listen((_) => _syncTileSnapshot());
+  }
 
   static const _defaultInstanceName = 'easytier_flutter_default';
 
@@ -70,6 +75,81 @@ class EasyTierService {
   String instanceNameOf(NetworkProfile? profile) {
     final name = profile?.instanceName;
     return (name == null || name.isEmpty) ? _defaultInstanceName : name;
+  }
+
+  /// Persist what the QS tile needs to cold-start the VPN with no Flutter
+  /// engine: the rendered TOML plus the address/route facts. Mirrors the
+  /// values the Dart orchestrator itself would use, so the tile path and
+  /// the app path start the exact same instance.
+  Future<void> _saveTileSnapshot(NetworkProfile profile) async {
+    final instanceName = instanceNameOf(profile);
+    final toml = profile.toConfig().toToml(instanceName);
+    final addr = _withPrefix(profile.virtualIpv4);
+    try {
+      await EasyTierBridge.tileSnapshotSave({
+        'profileId': profile.id,
+        'displayName': profile.displayName,
+        'instanceName': instanceName,
+        'toml': toml,
+        'dhcp': profile.dhcp,
+        'virtualIpv4': addr,
+        'routes': [
+          ?_cidrOf(addr),
+        ],
+      });
+    } on Object {
+      // Snapshot persistence must never break the connect flow (e.g. tests
+      // with mocked channels); tile start just falls back to open-app.
+    }
+  }
+
+  Future<void> _clearTileSnapshot() async {
+    try {
+      await EasyTierBridge.tileSnapshotClear();
+    } on Object {
+      // Same tolerance as the save path.
+    }
+  }
+
+  /// Re-persist the tile snapshot when profiles change. Skipped while the
+  /// core is running: connect() already wrote the exact started snapshot,
+  /// and a mid-session edit must not change what a tile STOP tears down.
+  Future<void> _syncTileSnapshot() async {
+    if (_state == CoreState.running || _state == CoreState.starting) return;
+    final profile = currentProfile;
+    if (profile == null) {
+      await _clearTileSnapshot();
+    } else {
+      await _saveTileSnapshot(profile);
+    }
+  }
+
+  /// App-start reconciliation: if a QS tile tap started (or tried to start)
+  /// the VPN while the UI was closed, adopt that state instead of showing
+  /// 'idle' while the TUN is actually up. The poll keeps it fresh after.
+  Future<void> reconcileWithNative() async {
+    try {
+      final phase = await EasyTierBridge.tileRuntimeState();
+      switch (phase) {
+        case 'running':
+          _lastError = null;
+          _setState(CoreState.running);
+          await refreshStatus();
+          _startPolling();
+        case 'starting':
+          _setState(CoreState.starting);
+          _startPolling();
+        case 'error':
+          _setState(CoreState.error);
+        case 'stopping':
+          _setState(CoreState.stopping);
+          _startPolling();
+        default:
+          break;
+      }
+    } on Object {
+      // Native side unavailable (tests, teardown): stay idle.
+    }
   }
 
   Future<void> connect(NetworkProfile profile) async {
@@ -113,6 +193,9 @@ class EasyTierService {
       _setState(CoreState.running);
       await refreshStatus();
       _startPolling();
+      // Written only after a verified-good start: the tile must never cold
+      // start from a config the app could not start itself.
+      await _saveTileSnapshot(profile);
     } on EasyTierError catch (e) {
       _lastError = e.userMessage;
       _setState(CoreState.error);
@@ -137,6 +220,9 @@ class EasyTierService {
     try {
       await EasyTierBridge.stopVpn();
       await _safeStopCore(instanceNameOf(currentProfile));
+      // Snapshot is intentionally kept: the tile must stay able to start
+      // this profile again — a quick-toggle that stops working after the
+      // first in-app disconnect would just be a launcher shortcut.
       _lastError = null;
       _lastStatus = NodeStatus.empty;
       _statusCtrl.add(_lastStatus);

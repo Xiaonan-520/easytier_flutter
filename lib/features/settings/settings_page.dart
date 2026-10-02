@@ -4,6 +4,7 @@ import '../../app/theme_controller.dart';
 import '../../core/services/easytier_service.dart';
 import 'about_page.dart';
 import 'appearance_page.dart';
+import 'background_page.dart';
 import 'diagnostics_page.dart';
 
 /// Settings: grouped entry points. Developer/advanced info lives under
@@ -48,6 +49,7 @@ class SettingsPage extends StatelessWidget {
               ),
             ],
           ),
+          const BackgroundRunningCard(),
           _Group(
             title: 'Advanced',
             children: [

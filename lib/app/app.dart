@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../core/models/network_profile.dart';
@@ -54,6 +56,10 @@ class _RootScaffoldState extends State<RootScaffold> {
 
   Future<void> _init() async {
     await _service.loadProfiles();
+    // Adopt any state a QS tile tap produced while the app was closed
+    // (VPN running, start in flight, or a failed tile start). Not awaited:
+    // first paint must not wait on a platform round-trip.
+    unawaited(_service.reconcileWithNative());
     // One-time migration: a pre-profiles install kept a single config under
     // network_config_v1 — turn it into the first profile.
     if (_service.profiles.profiles.isEmpty) {

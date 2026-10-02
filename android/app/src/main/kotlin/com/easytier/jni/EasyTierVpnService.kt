@@ -8,7 +8,11 @@ import android.content.pm.ServiceInfo
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.util.Log
+import org.json.JSONObject
+import io.github.xiaonan520.easytier_flutter.TileBootstrapper
+import io.github.xiaonan520.easytier_flutter.TileRuntime
 
 /**
  * VPN service adapted from the official EasyTier tauri-plugin-vpnservice
@@ -59,9 +63,23 @@ class EasyTierVpnService : VpnService() {
      */
     fun stopNow() {
         Log.i(TAG, "stopNow")
+        // Abort an in-flight tile-start orchestration; the thread frees the
+        // core itself if it had already got that far.
+        tileStartAborted = true
         disconnect()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    /** CMFA-style lifecycle broadcast: the tile listens while visible.
+     *  [vpnStartBroadcastSent] pairs every STARTED with exactly one STOPPED,
+     *  even when the stop lands before the TUN was ever up. */
+    private fun sendVpnStateBroadcast(started: Boolean) {
+        vpnStartBroadcastSent = started
+        val intent = Intent(
+            if (started) ACTION_VPN_STARTED else ACTION_VPN_STOPPED,
+        ).setPackage(packageName)
+        sendBroadcast(intent)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -70,8 +88,13 @@ class EasyTierVpnService : VpnService() {
         // service's own synchronous teardown path (same as stopVpn does).
         if (intent?.action == ACTION_NOTIFICATION_DISCONNECT) {
             Log.i(TAG, "disconnect requested from notification")
+            TileRuntime.onVpnStopped()
             stopNow()
             return START_NOT_STICKY
+        }
+
+        if (intent?.action == ACTION_TILE_START) {
+            return handleTileStart()
         }
 
         val instanceName = intent?.getStringExtra(INSTANCE_NAME)
@@ -83,6 +106,12 @@ class EasyTierVpnService : VpnService() {
             Log.e(TAG, "missing instance_name, stopping")
             stopSelf()
             return START_NOT_STICKY
+        }
+
+        // Duplicate attach (double-tap burst): never re-establish the TUN.
+        if (isRunning) {
+            sendVpnStateBroadcast(started = true)
+            return START_STICKY
         }
 
         startForegroundWithNotification()
@@ -103,10 +132,141 @@ class EasyTierVpnService : VpnService() {
             return START_NOT_STICKY
         }
         isRunning = true
+        TileRuntime.onVpnRunning()
+        sendVpnStateBroadcast(started = true)
+        // Tile-started session: no Flutter engine exists to push notification
+        // updates, so refresh the shade natively (idempotent with later
+        // Dart-driven updates — same id, same channel).
+        io.github.xiaonan520.easytier_flutter.NotificationHelper.postRunning(
+            this,
+            instanceName,
+            ipv4Addr,
+        )
         dbg("tun fd $fd attached to $instanceName")
         Log.i(TAG, "tun fd $fd attached to instance $instanceName")
         return START_STICKY
     }
+
+    /**
+     * Tile-initiated start with the app UI closed. The service promotes
+     * itself to foreground FIRST (a QS tap is a valid FGS-start exemption),
+     * then a background thread drives the same pipeline the Dart side uses:
+     * parseConfig -> runNetworkInstance -> wait for virtual IP -> TUN attach.
+     */
+    private fun handleTileStart(): Int {
+        // CMFA-style server-side mutual exclusion: a repeat TILE_START while
+        // running or already starting is an idempotent no-op that re-broadcasts
+        // STARTED — it must never become a stop (double-tap on a slow DHCP
+        // start used to kill the freshly started service).
+        if (isRunning || tileStartActive) {
+            sendVpnStateBroadcast(started = true)
+            return START_STICKY
+        }
+        // Must happen inside onStartCommand (post-O rule) and before any slow
+        // work, or the system kills the process (ForegroundServiceDidNotStartInTime).
+        startForegroundWithNotification()
+        sendVpnStateBroadcast(started = true)
+        tileStartActive = true
+        tileStartAborted = false
+        Thread {
+            try {
+                val snap = TileBootstrapper.load(this) ?: run {
+                    Log.e(TAG, "tile start without snapshot")
+                    TileRuntime.setPhase(TileRuntime.Phase.ERROR, "No saved profile for tile start")
+                    stopNowSafely()
+                    return@Thread
+                }
+                if (tileStartAborted) return@Thread
+                // Same validation step the Dart orchestrator runs first.
+                if (EasyTierJNI.parseConfig(snap.toml) != 0) {
+                    val err = EasyTierJNI.getLastError() ?: "config parse failed"
+                    Log.e(TAG, "tile start parse failed: $err")
+                    TileRuntime.setPhase(TileRuntime.Phase.ERROR, err)
+                    stopNowSafely()
+                    return@Thread
+                }
+                if (tileStartAborted) return@Thread
+                if (EasyTierJNI.runNetworkInstance(snap.toml) != 0) {
+                    val err = EasyTierJNI.getLastError() ?: "core start failed"
+                    Log.e(TAG, "tile start core failed: $err")
+                    TileRuntime.setPhase(TileRuntime.Phase.ERROR, err)
+                    stopNowSafely()
+                    return@Thread
+                }
+                if (tileStartAborted) {
+                    // Stop won the race: free the core we just started.
+                    EasyTierJNI.deleteNetworkInstance(snap.instanceName)
+                    return@Thread
+                }
+                // Static profiles have the address up front; DHCP profiles
+                // wait for the core to assign one (same 90s headroom as Dart).
+                val addr = if (snap.dhcp) waitForVirtualIp() else withPrefix(snap.virtualIpv4)
+                if (tileStartAborted) {
+                    EasyTierJNI.deleteNetworkInstance(snap.instanceName)
+                    return@Thread
+                }
+                if (addr == null) {
+                    Log.e(TAG, "tile start: no virtual IP in time")
+                    TileRuntime.setPhase(TileRuntime.Phase.ERROR, "Timed out waiting for a virtual IP")
+                    EasyTierJNI.deleteNetworkInstance(snap.instanceName)
+                    stopNowSafely()
+                    return@Thread
+                }
+                // Second hop: reuse the normal attach path (this same service).
+                val attach = Intent(this, EasyTierVpnService::class.java)
+                    .putExtra(INSTANCE_NAME, snap.instanceName)
+                    .putExtra(IPV4_ADDR, addr)
+                if (snap.routes.isNotEmpty()) attach.putExtra(ROUTES, snap.routes.toTypedArray())
+                startService(attach)
+                // computePhase() flips to RUNNING once isRunning is set in
+                // onStartCommand of the attach intent.
+            } catch (t: Throwable) {
+                Log.e(TAG, "tile start failed", t)
+                TileRuntime.setPhase(TileRuntime.Phase.ERROR, t.message ?: "tile start failed")
+                stopNowSafely()
+            } finally {
+                tileStartActive = false
+            }
+        }.start()
+        return START_STICKY
+    }
+
+    private fun stopNowSafely() {
+        try {
+            stopNow()
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** DHCP slow path: poll the core for its assigned virtual IP. */
+    private fun waitForVirtualIp(): String? {
+        val deadline = SystemClock.elapsedRealtime() + IP_WAIT_MS
+        while (SystemClock.elapsedRealtime() < deadline) {
+            try {
+                val json = EasyTierJNI.collectNetworkInfos(64)
+                val map = if (json != null) JSONObject(json).optJSONObject("map") else null
+                if (map != null) {
+                    for (key in map.keys().asSequence()) {
+                        val info = map.optJSONObject(key) ?: continue
+                        if (!info.optBoolean("running")) continue
+                        val v4 = info.optJSONObject("my_node_info")
+                            ?.optJSONObject("virtual_ipv4") ?: continue
+                        val a = v4.optJSONObject("address")?.optInt("addr") ?: 0
+                        if (a != 0) {
+                            val ip = "${(a shr 24) and 255}.${(a shr 16) and 255}.${(a shr 8) and 255}.${a and 255}"
+                            return "$ip/${v4.optInt("network_length", 24)}"
+                        }
+                    }
+                }
+            } catch (_: Throwable) {
+                // Core still booting; keep polling.
+            }
+            SystemClock.sleep(700)
+        }
+        return null
+    }
+
+    private fun withPrefix(ip: String): String = if (ip.contains('/')) ip else "$ip/24"
 
     private fun createVpnInterface(ipv4Addr: String, routes: Array<String>): Int {
         val ipParts = ipv4Addr.split("/")
@@ -159,7 +319,13 @@ class EasyTierVpnService : VpnService() {
             try { it.close() } catch (_: Exception) {}
         }
         vpnInterface = null
-        isRunning = false
+        if (isRunning) {
+            isRunning = false
+            TileRuntime.onVpnStopped()
+        }
+        if (vpnStartBroadcastSent) {
+            sendVpnStateBroadcast(started = false)
+        }
     }
 
     /** "a.b.c.d" + prefix -> network base address and prefix, e.g. ("10.144.144.0", 24). */
@@ -177,6 +343,8 @@ class EasyTierVpnService : VpnService() {
 
     companion object {
         private const val TAG = "EasyTierVpnService"
+        // DHCP/OSPF convergence headroom, matching the Dart orchestrator.
+        private const val IP_WAIT_MS = 150_000L
         // Shared with NotificationHelper, which renders the notification
         // content for both the service and app-level state updates.
         const val CHANNEL_ID = "easytier_vpn_channel"
@@ -185,6 +353,13 @@ class EasyTierVpnService : VpnService() {
         private const val PACKAGE_SELF = "io.github.xiaonan520.easytier_flutter"
 
         const val ACTION_NOTIFICATION_DISCONNECT = "io.github.xiaonan520.easytier_flutter.NOTIFICATION_DISCONNECT"
+
+        /** Tile-initiated cold start: no extras; snapshot-driven. */
+        const val ACTION_TILE_START = "io.github.xiaonan520.easytier_flutter.TILE_START"
+
+        /** Package-internal lifecycle broadcasts the tile aggregates. */
+        const val ACTION_VPN_STARTED = "io.github.xiaonan520.easytier_flutter.VPN_STARTED"
+        const val ACTION_VPN_STOPPED = "io.github.xiaonan520.easytier_flutter.VPN_STOPPED"
 
         const val INSTANCE_NAME = "instance_name"
         const val IPV4_ADDR = "ipv4_addr"
@@ -196,4 +371,10 @@ class EasyTierVpnService : VpnService() {
         @JvmStatic var instance: EasyTierVpnService? = null
             private set
     }
+
+    // Tile-start orchestration state; volatile: touched from the onStartCommand
+    // thread, the orchestration thread and stopNow() from any caller.
+    @Volatile private var tileStartActive = false
+    @Volatile private var tileStartAborted = false
+    @Volatile private var vpnStartBroadcastSent = false
 }

@@ -1,6 +1,12 @@
 package io.github.xiaonan520.easytier_flutter
 
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.content.ComponentName
+import android.os.PowerManager
+import android.provider.Settings
+import android.util.Log
 import android.net.VpnService
 import android.os.ParcelFileDescriptor
 import com.easytier.jni.EasyTierJNI
@@ -16,6 +22,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        TileRuntime.attach(this)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             try {
                 when (call.method) {
@@ -62,6 +69,27 @@ class MainActivity : FlutterActivity() {
                         result.success(true)
                     }
                     "isVpnRunning" -> result.success(EasyTierVpnService.isRunning)
+                    "tileSnapshotSave" -> {
+                        // commit() (not apply()): the tile may tap before the
+                        // async write lands.
+                        TileBootstrapper.save(
+                            this,
+                            call.argument<String>("snapshot") ?: "{}",
+                        )
+                        result.success(true)
+                    }
+                    "tileSnapshotClear" -> {
+                        TileBootstrapper.clear(this)
+                        result.success(true)
+                    }
+                    "tileRuntimeState" -> {
+                        result.success(
+                            mapOf(
+                                "phase" to TileRuntime.computePhase().name.lowercase(),
+                                "error" to TileRuntime.errorMessage,
+                            ),
+                        )
+                    }
                     "updateNotification" -> {
                         NotificationHelper.update(
                             this,
@@ -74,6 +102,47 @@ class MainActivity : FlutterActivity() {
                             txRate = call.argument<Double>("txRate") ?: 0.0,
                         )
                         result.success(true)
+                    }
+                    "openBackgroundActivitySettings" -> {
+                        // Vendor startup managers differ across EMUI/HarmonyOS
+                        // versions; HarmonyOS 4 guards the direct pages with
+                        // com.huawei.permission.external_app_settings
+                        // .USE_COMPONENT, so the phone-manager home is the
+                        // reachable entry there. Fall back to the app's
+                        // system settings page. Never throws.
+                        result.success(openFirstResolved(listOf(
+                            "com.huawei.systemmanager/.startupmgr.ui.StartupNormalAppListActivity",
+                            "com.huawei.systemmanager/.mainscreen.MainScreenActivity",
+                        )))
+                    }
+                    "openBatteryOptimizationSettings" -> {
+                        // Standard, version-stable entry: the request dialog
+                        // when the exemption is still off, else the list page.
+                        val pm = getSystemService(PowerManager::class.java)
+                        val ignoreIntent = Intent(
+                            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                            Uri.parse("package:$packageName"),
+                        )
+                        val target = if (
+                            pm != null &&
+                            !pm.isIgnoringBatteryOptimizations(packageName) &&
+                            ignoreIntent.resolveActivity(packageManager) != null
+                        ) {
+                            ignoreIntent
+                        } else {
+                            Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        }
+                        result.success(try {
+                            startActivity(target); true
+                        } catch (t: Throwable) {
+                            Log.w("MainActivity", "battery settings failed", t); false
+                        })
+                    }
+                    "isIgnoringBatteryOptimizations" -> {
+                        val pm = getSystemService(PowerManager::class.java)
+                        result.success(
+                            pm?.isIgnoringBatteryOptimizations(packageName),
+                        )
                     }
                     else -> result.notImplemented()
                 }
@@ -88,6 +157,33 @@ class MainActivity : FlutterActivity() {
         if (requestCode == REQUEST_VPN_PERMISSION) {
             pendingVpnResult?.success(resultCode == RESULT_OK)
             pendingVpnResult = null
+        }
+    }
+
+    /** Open the first component that actually resolves on this device;
+     *  keep walking down the list when one exists but fails to open. */
+    private fun openFirstResolved(components: List<String>): Boolean {
+        for (c in components) {
+            val intent = Intent().setComponent(ComponentName.unflattenFromString(c))
+            if (intent.resolveActivity(packageManager) == null) continue
+            try {
+                startActivity(intent)
+                return true
+            } catch (t: Throwable) {
+                Log.w("MainActivity", "open $c failed", t)
+            }
+        }
+        return try {
+            // Generic fallback: this app's system settings page.
+            startActivity(
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.parse("package:$packageName"),
+                ),
+            )
+            true
+        } catch (t: Throwable) {
+            Log.w("MainActivity", "app details failed", t); false
         }
     }
 
