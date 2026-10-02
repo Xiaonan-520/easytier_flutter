@@ -58,7 +58,9 @@ jobs:
           packages: "ndk;28.2.13676358"
 
       - name: Install cargo-ndk
-        run: cargo install cargo-ndk --locked
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
+          cargo install cargo-ndk --locked
 
       - name: Build libeasytier_android_jni.so (${{ matrix.abi }})
         working-directory: easytier-upstream/easytier-contrib/easytier-android-jni
