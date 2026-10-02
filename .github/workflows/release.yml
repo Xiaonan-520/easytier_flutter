@@ -44,6 +44,15 @@ jobs:
           prefix-key: easytier-core
           key: ${{ matrix.target }}
 
+      # Upstream pins its toolchain via rust-toolchain.toml; the target must
+      # be added to THAT toolchain, not to stable.
+      - name: Add rust target to pinned toolchain
+        working-directory: easytier-upstream
+        run: |
+          TC=$(rustup show active-toolchain | awk '{print $1}')
+          echo "pinned: $TC"
+          rustup target add ${{ matrix.target }} --toolchain "$TC"
+
       - uses: android-actions/setup-android@v3
         with:
           packages: "ndk;28.2.13676358"
