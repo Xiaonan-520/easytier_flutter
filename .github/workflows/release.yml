@@ -97,12 +97,19 @@ jobs:
           merge-multiple: true
           path: android/app/src/main/jniLibs
 
-      - name: Verify ABI coverage
+      - name: Place & verify native libraries
         run: |
-          find android/app/src/main/jniLibs -name "*.so" | sort
-          test -f android/app/src/main/jniLibs/arm64-v8a/libeasytier_android_jni.so
-          test -f android/app/src/main/jniLibs/armeabi-v7a/libeasytier_android_jni.so
-          test -f android/app/src/main/jniLibs/x86_64/libeasytier_android_jni.so
+          # Artifacts keep the upstream target path; flatten into jniLibs/<abi>/
+          root=android/app/src/main/jniLibs
+          declare -A M=( [aarch64-linux-android]=arm64-v8a [armv7-linux-androideabi]=armeabi-v7a [x86_64-linux-android]=x86_64 )
+          for t in "${!M[@]}"; do
+            src=$(find $root/easytier-upstream -path "*/$t/release/libeasytier_android_jni.so" | head -1)
+            test -n "$src" || { echo "missing $t"; exit 1; }
+            mkdir -p $root/${M[$t]}
+            cp "$src" $root/${M[$t]}/
+          done
+          rm -rf $root/easytier-upstream
+          find $root -name "*.so" | sort
 
       - name: Build split APKs
         run: |
